@@ -10,6 +10,10 @@ import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.tilelink.TLMessages.AccessAck
 import freechips.rocketchip.tilelink.TLMessages.AccessAckData
+import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
+import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
+import freechips.rocketchip.tilelink.TLBusWrapper
+
 
 
 case class RelMemParams (
@@ -75,7 +79,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     println(s"Number of edges into RME: $nClients ${node.in}")
     require(nClients >= 1)
     
-    val memBase = p(ExtMem).get.master.base.U
+   // val memBase = p(ExtMem).get.master.base.U
     // last connect semantics should work for us here
 
     /*
@@ -111,3 +115,4 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 trait CanHaveRME {
   val rme: Option[RME]
 }
+
