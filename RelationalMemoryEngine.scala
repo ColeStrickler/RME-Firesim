@@ -12,7 +12,8 @@ import freechips.rocketchip.tilelink.TLMessages.AccessAck
 import freechips.rocketchip.tilelink.TLMessages.AccessAckData
 import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
-import freechips.rocketchip.tilelink.TLBusWrapper
+import freechips.rocketchip.subsystem._
+import freechips.rocketchip.subsystem.Attachable
 
 
 
@@ -28,42 +29,53 @@ case class RelMemParams (
 class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 {
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem"))
-
-    val node = TLAdapterNode()
     val beatBytes = 8
-    val (out, out_edge) = node.out(0)
-    val (in, in_edge) = node.in(0)
-    val outParams = out_edge.bundle
-    val inParams = in_edge.bundle
-    val slaveParams = node.managerFn
+    val node = TLAdapterNode(clientFn = { p =>
+      // The ProbePicker assembles multiple clients based on the assumption they are contiguous in the clients list
+      // This should be true for custers of xbar :=* BankBinder connections
+      def combine(next: TLMasterParameters, pair: (TLMasterParameters, Seq[TLMasterParameters])) = {
+        val (head, output) = pair
+        if (head.visibility.exists(x => next.visibility.exists(_.overlaps(x)))) {
+          (next, head +: output) // pair is not banked, push head without merging
+        } else {
+          def redact(x: TLMasterParameters) = x.v1copy(sourceId = IdRange(0,1), nodePath = Nil, visibility = Seq(AddressSet(0, ~0)))
+          require (redact(next) == redact(head), s"${redact(next)} != ${redact(head)}")
+          val merge = head.v1copy(
+            sourceId = IdRange(
+              head.sourceId.start min next.sourceId.start,
+              head.sourceId.end   max next.sourceId.end),
+            visibility = AddressSet.unify(head.visibility ++ next.visibility))
+          (merge, output)
+        }
+      }
+      val myNil: Seq[TLMasterParameters] = Nil
+      val (head, output) = p.clients.init.foldRight((p.clients.last, myNil))(combine)
+      p.v1copy(clients = head +: output)
+    },
+    managerFn = { p => p })
+
     /* 
         We may need to shift the memory params so they do not overlap?
     */
     val manager = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
     address = Seq(AddressSet(params.rmeaddress, 0xfff)),
     resources = device.reg,
-    regionType = RegionType.CACHED,
+    regionType = RegionType.UNCACHED,
     executable = false,
-    supportsArithmetic = TransferSizes(1, beatBytes),
-    supportsLogical = TransferSizes(1, beatBytes),
-    supportsGet = TransferSizes(1, beatBytes),
-    supportsPutFull = TransferSizes(1, beatBytes),
-    supportsPutPartial = TransferSizes(1, beatBytes),
-    supportsHint = TransferSizes(1, beatBytes),
+    supportsGet        =  TransferSizes(64, 64),
+    supportsPutFull    =  TransferSizes(64, 64),
+    supportsPutPartial =  TransferSizes(64, 64),
+    supportsHint =        TransferSizes(64, 64),
     fifoId = Some(0))), beatBytes)))
 
     
-    val (manager_out, manager_out_edge) = manager.out(0)
-    val (manager_in, manager_in_edge) = manager.in(0)
-    val managerInParams = manager_in_edge.bundle
-    val managerOutParams = manager_out_edge.bundle
+    
 
 
-
-  val regnode = new TLRegisterNode(
-    address = Seq(AddressSet(params.regaddress, 0x7ff)),
-    device = device,
-    beatBytes = 8)
+  //val regnode = new TLRegisterNode(
+  //  address = Seq(AddressSet(params.regaddress, 0x7ff)),
+  //  device = device,
+  //  beatBytes = 8)
 
 
 
@@ -75,6 +87,17 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   println("\n\n\n\nUsing relational memory engine\n\n\n\n")
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
+      
+    val (out, out_edge) = node.out(0)
+    val (in, in_edge) = node.in(0)
+    val outParams = out_edge.bundle
+    val inParams = in_edge.bundle
+    val slaveParams = node.managerFn
+    //val (manager_out, manager_out_edge) = manager.out(0)
+    val (manager_in, manager_in_edge) = manager.in(0)
+    val managerInParams = manager_in_edge.bundle
+    //val managerOutParams = manager_out_edge.bundle
+
     val nClients = node.in.length
     println(s"Number of edges into RME: $nClients ${node.in}")
     require(nClients >= 1)
@@ -102,7 +125,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         SynthesizePrintf("Received request to manager: %d\n", manager_in.a.bits.address)
     }
 
-    manager_in.d := manager_in_edge.AccessAck(manager_in.a.bits, 0x6969.U)
+    manager_in.d.bits := manager_in_edge.AccessAck(manager_in.a.bits, 0x6969.U)
     manager_in.d.valid := manager_in_edge.done(manager_in.a)
     /*
         We arbitrate on the out edge between requests from the RME and other requests
@@ -112,7 +135,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 }
 
-trait CanHaveRME {
+trait CanHaveRME extends {
   val rme: Option[RME]
 }
 
+trait HasRMEAttachable extends BaseSubsystem {
+  val mbus = locateTLBusWrapper(MBUS)
+  mbus.coupleTo("rme-manager") {mbus.rme.get.manager := TLWidthWidget(mbus.rme.get.beatBytes) := _ }
+}
