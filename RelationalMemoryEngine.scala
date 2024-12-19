@@ -46,6 +46,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     //  }
     //}
     val beatBytes = 8
+
+    /*
+      We need this to reserve an address range in the device tree 
+    */
     ResourceBinding {
       Resource(device, "reg").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
     }
@@ -126,99 +130,55 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   println("\n\n\n\nUsing relational memory engine\n\n\n\n")
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
-    
-      
-    val (out, out_edge) = node.out(0)
-    val (in, in_edge) = node.in(0)
-    val outParams = out_edge.bundle
-    val inParams = in_edge.bundle
-
-    out <> in
-    //val (manager_out, manager_out_edge) = manager.out(0)
-   // val (manager_in, manager_in_edge) = manager.in(0)
-    //val managerInParams = manager_in_edge.bundle
-    //manager_out <> manager_in
-    // val managerOutParams = manager_out_edge.bundle
-    
-
     val nClients = node.in.length
-    println(s"Number of edges into RME: $nClients\n")
     require(nClients >= 1)
+    println(s"Number of edges into RME: $nClients\n")
+      
+
+    for (i <- 0 until nClients)
+    {
+      val (out, out_edge) = node.out(i)
+      val (in, in_edge) = node.in(i)
+      val outParams = out_edge.bundle
+      val inParams = in_edge.bundle
+
+      out <> in
+
+
+      //node.in.map{case (e, i) => println("client %s\n", i.params.)}
+    
 
 
 
-    //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=true))
-    //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=true))
+      val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=true))
+      val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=true))
+
+    
+      rme_in_queue.io.enq.valid := false.B
+      rme_in_queue.io.enq.bits := in.a.bits
+    
+
+      when (ToRME(in.a.bits.address))
+      {
+          SynthesizePrintf("Received request to rme %x\n", in.a.bits.address)
+          rme_in_queue.io.enq.bits := in.a.bits
+          rme_in_queue.io.enq.valid := in.a.valid
+          in.a.ready := rme_in_queue.io.enq.ready
+      }
 
     
 
-   // val memBase = p(ExtMem).get.master.base.U
-    // last connect semantics should work for us here
-
-    /*
-        For now lets just let everything flow through
-    */
-    
-
-    
-
-    // All incoming requests are channel A right? So we should only give D responses
-    // We will alternate who sends data back
-    //val returnArbiter = Module(new TLArbiter(new TLBundleD(inParams), 2))
-    
-    //val rmeInQueue = Module(new Queue(new TLBundleA(managerInParams), 16))
-    //rmeInQueue.io.enq.valid := manager_in.a.fire
-    //rmeInQueue.io.enq := manager_in.a
-
-    // reply with fixed data
-  
-    //manager_in.a.ready := rme_in_queue.io.enq.ready
-    //rme_in_queue.io.enq.bits := manager_in.a.bits
-    //when (manager_in.a.valid)
-    //{
-    //when (ToRME(in.a.bits.address))
-    //{
-    //  SynthesizePrintf("Request sent to RME %d\n", manager_in.a.bits.address)
-    //  rme_in_queue.io.enq.valid := manager_in.a.fire
-    //  rme_in_queue.io.enq.bits := manager_in.a.bits     
-    //}
-    //.otherwise
-    //{
-    //  SynthesizePrintf("Manager got request sent to non rme address\n", manager_in.a.bits.address);
-    //}
-    
-    //when (manager_in.a.fire && manager_in.a.bits.opcode =/=  TLMessages.Get)
-    //{
-    //  SynthesizePrintf("Manager got non-Get message %d\n", manager_in.a.bits.opcode)
-    //}
-
-
-    //manager_in.d.valid := manager_in.a.valid  
-    //manager_in.a.ready := manager_in.d.ready
-    //manager_in.d.bits := manager_in_edge.AccessAck(manager_in.a.bits, 6969.U)
-    //manager_in.b.valid := false.B
-    //manager_in.c.ready := true.B
-    //manager_in.e.ready := true.B
-    //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid
-    //rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
-    //rme_reply_queue.io.enq.bits := replyD
-
-    //when (!rme_reply_queue.empty)
-    //{
-    //  rme_reply_queue.io.deq.valid := true.B
-    //}
-
-    /* 
-      To Memory Arbiter
-      Do we need to worry about consistency here?
-    */
-    //TLArbiter.robin(out_edge, out.a, )
-
-    /* 
-      Back to cache Arbiter
-    */
+      // Pass between queues
+      rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
+      rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
+      val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
+      rme_reply_queue.io.enq.bits := dReply
    
-    //TLArbiter.robin(in_edge, in.d, out.d, rme_reply_queue.io.deq)
+
+      // back to cache arbiter
+      TLArbiter.robin(in_edge, in.d, out.d, rme_reply_queue.io.deq)
+    }
+    
     //TLArbiter.robin(out_edge, out.a, in.a, manager_in.a)
 
     //manager_in.d.bits := manager_in_edge.AccessAck(manager_in.a.bits, 0x6969.U)
