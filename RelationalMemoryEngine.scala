@@ -33,7 +33,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     val addr = Seq(AddressSet(params.rmeaddress, 0xfff))
     
-    val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) 
+    val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
+
+    }
     //{
     //  override def describe(resources: ResourceBindings): Description = {
     //    val res =  Map(("reserved" -> Seq(Binding(Some(this), ResourceAddress(Seq(addr), rocketchip.resources.ResourcePermissions(true, true, false, true, true))).value)))
@@ -49,9 +51,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     /*
       We need this to reserve an address range in the device tree 
+
+
+      Am not sure if this is working properly. We get an error if the address is too low
     */
     ResourceBinding {
-      Resource(device, "reg").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
+      Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
     }
     
 
@@ -137,36 +142,24 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     for (i <- 0 until nClients)
     {
+      
+
       val (out, out_edge) = node.out(i)
       val (in, in_edge) = node.in(i)
       val outParams = out_edge.bundle
       val inParams = in_edge.bundle
+      out.b <> in.b
+      out.c <> in.c
+      out.e <> in.e
+      println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
 
-      out <> in
+      val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
+      val rme_reply_queue = Module(new Queue(new TLBundleD(outParams), 128, flow=false))
 
-
-      //node.in.map{case (e, i) => println("client %s\n", i.params.)}
-    
-
-
-
-      val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=true))
-      val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=true))
-
-    
+      // defaults
       rme_in_queue.io.enq.valid := false.B
       rme_in_queue.io.enq.bits := in.a.bits
-    
-
-      when (ToRME(in.a.bits.address))
-      {
-          SynthesizePrintf("Received request to rme %x\n", in.a.bits.address)
-          rme_in_queue.io.enq.bits := in.a.bits
-          rme_in_queue.io.enq.valid := in.a.valid
-          in.a.ready := rme_in_queue.io.enq.ready
-      }
-
-    
+      
 
       // Pass between queues
       rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
@@ -175,8 +168,70 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       rme_reply_queue.io.enq.bits := dReply
    
 
+      when (ToRME(in.a.bits.address))
+      {
+        // When in the rme address range we pass here
+        // handle requests in
+        SynthesizePrintf("To RME %x\n", in.a.bits.address)
+        rme_in_queue.io.enq <> in.a
+        
+      }
+      .otherwise
+      {
+        out.a <> in.a
+      }
+
+
+
+      when (rme_reply_queue.io.count > 0.U)
+      {
+        SynthesizePrintf("RME Got reply queue entry %d\n", rme_reply_queue.io.count)
+      }
+
+      when (rme_in_queue.io.count > 0.U)
+      {
+        SynthesizePrintf("RME got in queue entry %d\n", rme_in_queue.io.count)
+      }
+
+      
+
+     
+
+      
+
+      
+
+
+
       // back to cache arbiter
       TLArbiter.robin(in_edge, in.d, out.d, rme_reply_queue.io.deq)
+    }
+
+      
+
+
+      //node.in.map{case (e, i) => println("client %s\n", i.params.)}
+    
+
+
+
+      
+
+    
+      
+    
+
+      
+      //SynthesizePrintf("Received address %x\n", in.a.bits.address)
+
+    
+      //when (in.a.fire)
+      //{
+      //  SynthesizePrintf("Address: 0x%x\n", in.a.bits.address)
+      //}
+    
+
+      
     }
     
     //TLArbiter.robin(out_edge, out.a, in.a, manager_in.a)
@@ -184,12 +239,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     //manager_in.d.bits := manager_in_edge.AccessAck(manager_in.a.bits, 0x6969.U)
     //manager_in.d.valid := manager_in_edge.done(manager_in.a)
 
-  }
+  
 
 }
 
 trait CanHaveRME extends {
   val rme: Option[RME]
+}
+
+trait HasReservedAddressRange extends SimpleDevice {
+  hasReservedRange = true
 }
 
 trait HasRMEAttachable extends BaseSubsystem {
