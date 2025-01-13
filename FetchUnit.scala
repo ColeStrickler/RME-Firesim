@@ -32,8 +32,6 @@ class FetchUnitRME(params: RelMemParams, RMEDevice : Device, tlOutEdge: TLEdge, 
         //req.size
         //req.data
         //req.param
-
-
         req
     }
 
