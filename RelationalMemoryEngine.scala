@@ -21,65 +21,12 @@ import freechips.rocketchip.subsystem.Attachable
 case class RelMemParams (
     regaddress: Int,
     rmeaddress: BigInt,
-    mbus : MemoryBus
+    mbus : MemoryBus,
+    controlMMIOAddress : Int,
+    controlBeatBytes : Int
 )
 
 
-class ConditionalDemux(params: TLBundleParameters) extends Module {
-  val io = IO(new Bundle {
-    val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
-    val sel    = Input(Bool())   // Selector (1-bit)
-    val outA   = DecoupledIO(new TLBundleA(params))// Output to location A
-    val outB   = DecoupledIO(new TLBundleA(params)) // Output to location B
-  })
-
-  // Default both outputs to zero
-  val readyOther = Reg(Bool()) // so we have somewhere to connect it to
-
-  val dummyMessage = Wire(new TLBundleA(params))
-  dummyMessage.opcode := 0.U
-  dummyMessage.param := 0.U
-  dummyMessage.size := 0.U
-  dummyMessage.source := 0.U
-  dummyMessage.address := 0.U
-  dummyMessage.mask := 0.U
-  dummyMessage.data := 0.U
-  dummyMessage.corrupt := false.B
-
-  when (io.sel)
-  {
-    SynthesizePrintf("Selector = 1\n")
-    
-  }
-
-  // if this never fires we have a problem
-  when (io.dataIn.valid )
-  {
-    SynthesizePrintf("io.dataIn.valid\n")
-    SynthesizePrintf("io.data.bits.address 0x%x\n", io.dataIn.bits.address)
-  }
-
-  when (!io.outB.ready)
-  {
-    SynthesizePrintf("!io.dataIn.ready\n")
-  }
-
-
-  // Route input based on selector
-  when(io.sel) {
-    io.outB <> io.dataIn
-    io.outA.bits := dummyMessage
-    io.outA.valid := false.B
-    readyOther := io.outA.ready
-    
-  }.otherwise {
-    io.outA <> io.dataIn
-    io.outB.bits := dummyMessage
-    io.outB.valid := false.B
-    readyOther := io.outB.ready
-
-  }
-}
 
 
 
@@ -92,13 +39,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
 
     }
-    val beatBytes = 8
 
     /*
       We need this to reserve an address range in the device tree 
-
-
-      Am not sure if this is working properly. We get an error if the address is too low
+      -> This required modifications to the device tree generation. See RocketChip fork
     */
     ResourceBinding {
       Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
@@ -126,7 +70,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
-      
+    val ConfigPort = ConfigurationPortRME(params, device)
 
     for (i <- 0 until nClients)
     {
