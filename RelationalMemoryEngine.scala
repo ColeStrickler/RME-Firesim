@@ -23,7 +23,8 @@ case class RelMemParams (
     rmeaddress: BigInt,
     mbus : MemoryBus,
     controlMMIOAddress : Int,
-    controlBeatBytes : Int
+    controlBeatBytes : Int,
+    ScratchPadMemSize : Int = 4096
 )
 
 
@@ -70,7 +71,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
-    val ConfigPort = ConfigurationPortRME(params, device)
+    //val ConfigPort = ConfigurationPortRME(params, device)
 
     for (i <- 0 until nClients)
     {
@@ -83,7 +84,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       out.e <> in.e
       println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
       println(s"in.d.numBeats ${in_edge.numBeats(in.d.bits)}\n")
-     val inDBeats = in_edge.numBeats(in.d.bits)
+      val inDBeats = in_edge.numBeats(in.d.bits)
 
       val demux = Module(new ConditionalDemux(inParams))
       val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
