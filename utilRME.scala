@@ -75,3 +75,28 @@ class ConditionalDemux(params: TLBundleParameters) extends Module {
 
   }
 }
+
+
+
+class ScratchPadMemBank(MemDepth: Int, MemWidth: Int) extends Module {
+  val io = IO(new Bundle {
+    val enable = Input(Bool())
+    val write = Input(Bool())
+    val addr = Input(UInt(log2Ceil(MemDepth).W))
+    val dataIn = Input(UInt(MemWidth.W))
+    val dataOut = Output(UInt(MemWidth.W))
+  })
+
+
+
+  // ensure address not out of range
+  assert(io.addr < MemDepth.U)
+
+  // should be synthesized as SRAM
+  val mem = SyncReadMem(MemDepth, UInt(MemWidth.W))
+  
+  
+  // Create one write port and one read port
+  mem.write(io.addr, io.dataIn)
+  io.dataOut := mem.read(io.addr, io.enable)
+}
