@@ -24,7 +24,8 @@ case class RelMemParams (
     mbus : MemoryBus,
     controlMMIOAddress : Int,
     controlBeatBytes : Int,
-    ScratchPadMemSize : Int = 4096
+    DataSPMSize : Int = 1024,
+    MetadataSPMSize : Int = 1024,
 )
 
 

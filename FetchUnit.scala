@@ -14,8 +14,8 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 case class FetchUnitControlPort() extends Bundle
 {
-    val data = UInt(512.W) // 64 bytes = 1 cache line
-    val baseAddr = UInt(64.W) // base address of the request
+    val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
+    val baseAddr = Output(UInt(64.W)) // base address of the request
 }
 
 

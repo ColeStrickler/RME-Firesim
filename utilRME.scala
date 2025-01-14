@@ -77,15 +77,19 @@ class ConditionalDemux(params: TLBundleParameters) extends Module {
 }
 
 
+case class ScratchPadIO(MemDepth: Int, MemWidth: Int) extends Bundle
+{
+  val enable = Input(Bool())
+  val write = Input(Bool())
+  val addr = Input(UInt(log2Ceil(MemDepth).W))
+  val dataIn = Input(UInt(MemWidth.W))
+  val dataOut = Output(UInt(MemWidth.W))
+}
+
+
 
 class ScratchPadMemBank(MemDepth: Int, MemWidth: Int) extends Module {
-  val io = IO(new Bundle {
-    val enable = Input(Bool())
-    val write = Input(Bool())
-    val addr = Input(UInt(log2Ceil(MemDepth).W))
-    val dataIn = Input(UInt(MemWidth.W))
-    val dataOut = Output(UInt(MemWidth.W))
-  })
+  val io = IO(new ScratchPadIO(MemDepth, MemWidth))
 
 
 

@@ -13,7 +13,10 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
+case class RequestorTrapperPort() extends Bundle
+{
 
+}
 
 
 
@@ -27,15 +30,17 @@ class RequestorRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
             
 
             // Control Unit Port
+            val ControlUnit = Flipped(ControlUnitRequestorPort())
+
 
 
             // Config Port
-            val config = Input(RMEConfigPortIO())
+            val Config = Input(RMEConfigPortIO())
 
 
 
             // Trapper Port
-
+            val Trapper = RequestorTrapperPort()
 
         })
 
@@ -44,7 +49,7 @@ class RequestorRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         /*
             We operate on a single bit state machine:
-                       
+
             Idle => ready to receive incoming requests
             Active => generating new modified requests based on config to send to fetch unit
         */

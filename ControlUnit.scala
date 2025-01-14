@@ -15,7 +15,15 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
+case class ControlUnitRequestorPort() extends Bundle
+{
 
+}
+
+case class ControlUnitTrapperPort() extends Bundle 
+{
+
+}
 
 
 
@@ -24,16 +32,20 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     implicit p: Parameters) extends LazyModule {
     val io = IO(new Bundle{
         // Config Port 
-        val config = Input(RMEConfigPortIO())
+        val Config = Input(RMEConfigPortIO())
 
 
         // Fetch Unit Port
+        val FetchUnitPort = DecoupledIO(Flipped(FetchUnitControlPort()))
 
 
         // Trapper Port
+        val TrapperPort = ControlUnitTrapperPort()
+
 
 
         // Requestor Port
+        val RequestorPort = ControlUnitRequestorPort()
 
     })
 
@@ -45,6 +57,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         3. When a new request comes in, we need to update its metadata entry in the Metadata SPM
         4. When a reply comes from the fetch unit, we need to write it to the Data SPM
         5. When we have all data needed to construct a packed line, we notify the packer
+        6. Track where to write and read data from
     
     */
 
@@ -52,7 +65,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) {
 
-
+        val spm = Module(new ScratchPadRME(params))
 
     }
 
