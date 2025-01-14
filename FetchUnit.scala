@@ -12,17 +12,15 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-class FetchUnitRequest
+case class FetchUnitControlPort() extends Bundle
 {
-    val addr = UInt(64.W)
-    val opcode = UInt(3.W)
-    val source = UInt(2.W)
-
+    val data = UInt(512.W) // 64 bytes = 1 cache line
+    val baseAddr = UInt(64.W) // base address of the request
 }
 
 
 
-class FetchUnitRME(params: RelMemParams, RMEDevice : Device, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
+class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
     implicit p: Parameters) extends LazyModule {
 
     val tlOutParams = tlOutEdge.bundle
@@ -39,13 +37,13 @@ class FetchUnitRME(params: RelMemParams, RMEDevice : Device, tlOutEdge: TLEdge, 
         val OutReq = DecoupledIO(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
         val inReply = Flipped(DecoupledIO(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
 
-        // SPM Port
-        val WriteAddrSPM = Flipped(DecoupledIO(UInt(log2Ceil(params.ScratchPadMemSize).W))) // where to write received data to
-        //val outData = DecoupledIO(new TLBundleD(tlOutParams))
+        
+        // Control Unit Port
+        val outSPM = DecoupledIO(FetchUnitControlPort())
 
 
-        // Trapper port
-        val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
+        // Trapper port --> don't think we need this
+        //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
     })
     
 
@@ -63,6 +61,7 @@ class FetchUnitRME(params: RelMemParams, RMEDevice : Device, tlOutEdge: TLEdge, 
 
 
         /*
+            [ DRAM OUTBOUND ]
             Handle outbound requests to DRAM
         */
         // Store Current Request in a register to keep its state, pass beating request out in Wire
@@ -83,22 +82,31 @@ class FetchUnitRME(params: RelMemParams, RMEDevice : Device, tlOutEdge: TLEdge, 
 
 
         /*
+            [ DRAM INBOUND ]
             Handle Inbound replies from DRAM
         */
         val (d_first, d_last, d_done) = tlOutEdge.firstlast(tlOutBundle.d)
-        val dataRegWriteIndex = RegInit(0.U(log2Ceil(64).W)) //  index for each byte
+        //val dataRegWriteIndex = RegInit(0.U(log2Ceil(64).W)) //  index for each byte
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
+        val dataRegFull = RegInit(false.B)
+
+        io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
+        // shift in new data
+        dataReg := Mux(io.inReply.fire, Cat((dataReg << io.inReply.bits.data.getWidth), io.inReply.bits.data), dataReg)
+
+        /*
+            if (done receiving data)
+                dataRegFull = true
+            else
+                if (data reg is already full)
+                    if we write data to SPM dataRegFull = false
+                else
+                    dataReg is not full and we stay false
+        */
+        dataRegFull := Mux(d_last, true.B, Mux(dataRegFull, !io.outSPM.fire, false.B))
+        io.outSPM.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
         
-
-        when (io.inReply.fire)
-        {
-
-            // We shift in the received data
-            dataReg := Cat((dataReg << (1 << io.inReply.bits.data.getWidth)), io.inReply.bits.data)
-        }
-
-
-
+        
 
     }
 }

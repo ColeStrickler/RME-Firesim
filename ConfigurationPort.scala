@@ -12,15 +12,22 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
+case class RMEConfigPortIO() extends Bundle
+{
+    val RowSize = UInt(32.W) // size of each row in database
+    val RowCount = UInt(32.W) // count of each row in database
+    val EnabledColumnCount = UInt(4.W) // total number of enabled columns
+    val ColumnWidths = Vec(15, UInt(6.W)) // width of ith enabled column
+    val ColumnOffsets = Vec(15, UInt(6.W)) // offset off column j from column j-1
+    val FrameOffset = UInt(32.W)
+}
+
+
+
 class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p: Parameters) extends LazyModule 
 {
     val io = IO(new Bundle {
-        val RowSize = Output(UInt(32.W)) // size of each row in database
-        val RowCount = Output(UInt(32.W)) // count of each row in database
-        val EnabledColumnCount = Output(UInt(4.W)) // total number of enabled columns
-        val ColumnWidths = Output(Vec(15, UInt(6.W))) // width of ith enabled column
-        val ColumnOffsets = Output(Vec(15, UInt(6.W))) // offset off column j from column j-1
-        val FrameOffset = Output(UInt(32.W))
+        val config = Output(RMEConfigPortIO())
     })
 
     val ctlnode = TLRegisterNode(
@@ -78,14 +85,14 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
 
         // Assign IO
 
-        io.RowSize := r_RowSize
-        io.RowCount := r_RowCount
-        io.EnabledColumnCount := r_EnabledColumnCount
-        io.FrameOffset := r_FrameOffset
+        io.config.RowSize := r_RowSize
+        io.config.RowCount := r_RowCount
+        io.config.EnabledColumnCount := r_EnabledColumnCount
+        io.config.FrameOffset := r_FrameOffset
         for (i <- 0 until 15)
         {
-             io.ColumnWidths(i) := r_ColumnWidths(i)
-             io.ColumnOffsets(i) := r_ColumnOffsets(i)
+             io.config.ColumnWidths(i) := r_ColumnWidths(i)
+             io.config.ColumnOffsets(i) := r_ColumnOffsets(i)
         }
     }
 

@@ -9,3 +9,46 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+
+
+
+
+
+
+
+
+class RequestorRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
+    implicit p: Parameters) extends LazyModule {
+        val tlOutParams = tlOutEdge.bundle
+        val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
+        val io = IO(new Bundle {
+            // Fetch Unit Port
+            val FetchReq = DecoupledIO(new TLBundleA(tlOutParams)) // Send request to fetch unit 
+            
+
+            // Control Unit Port
+
+
+            // Config Port
+            val config = Input(RMEConfigPortIO())
+
+
+
+            // Trapper Port
+
+
+        })
+
+    lazy val module = new Impl
+    class Impl extends LazyModuleImp(this) {
+
+        /*
+            We operate on a single bit state machine:
+                       
+            Idle => ready to receive incoming requests
+            Active => generating new modified requests based on config to send to fetch unit
+        */
+
+
+    }
+}
