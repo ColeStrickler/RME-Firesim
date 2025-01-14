@@ -9,6 +9,7 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+import _root_.subsystem.rme.subsystem.rme.ScratchPadMemBank
 
 
 
@@ -21,7 +22,8 @@ class ScratchPadRME(params: RelMemParams)(
 
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) {
-        
+        val MetaDataSPM = Module(new ScratchPadMemBank(1024, 32))
+        val CachelineSPM = Module(new ScratchPadMemBank(1024, 64))
 
     }
 }

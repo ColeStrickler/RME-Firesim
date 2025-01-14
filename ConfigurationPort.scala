@@ -65,8 +65,9 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
                     mmio_ColumnWidths ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
         val regmap = ctlnode.regmap(mmreg: _*)
 
-        // Next State Values
-
+        /*
+            Register next state assignment
+        */
         when (r_Reset) // Synchronous High Reset
         {
             // r_Reset := false.B --> we will make software toggle the reset
