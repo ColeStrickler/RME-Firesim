@@ -20,6 +20,8 @@ case class FetchUnitControlPort() extends Bundle
 
 
 
+
+
 class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
     implicit p: Parameters) extends LazyModule {
 
@@ -27,7 +29,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
     val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
     val io = IO(new Bundle {
         // Requestor Port
-        val FetchReq = Flipped(DecoupledIO(new TLBundleA(tlOutParams))) // Receive address to request from the Requestor Module
+        val Requestor = Flipped(RequestorFetchUnitPort(tlOutParams)) // Receive address to request from the Requestor Module]
         /*
             We will probable want to tag this A channel request on as metadata so we can easily form
             D channel replies to cache
@@ -71,9 +73,9 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         
         val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
-        currentlyBeating := Mux(currentlyBeating, !a_last, io.FetchReq.fire)
-        io.FetchReq.ready := a_done || !currentlyBeating
-        currentRequest := Mux(io.FetchReq.fire, io.FetchReq.bits, currentRequest)
+        currentlyBeating := Mux(currentlyBeating, !a_last, io.Requestor.FetchReq.fire)
+        io.Requestor.FetchReq.ready := a_done || !currentlyBeating
+        currentRequest := Mux(io.Requestor.FetchReq.fire, io.Requestor.FetchReq.bits, currentRequest)
 
         beatingRequest.bits := currentRequest
         beatingRequest.valid := currentlyBeating // if we are currently beating request will be valid

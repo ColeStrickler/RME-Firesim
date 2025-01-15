@@ -20,6 +20,7 @@ import freechips.rocketchip.subsystem.Attachable
 
 
 
+
 class ConditionalDemux(params: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
     val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
