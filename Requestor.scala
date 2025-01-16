@@ -22,6 +22,7 @@ case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
 case class RequestorFetchUnitPort(params: TLBundleParameters) extends Bundle
 {
     val FetchReq = DecoupledIO(new TLBundleA(params))
+    val baseAddr = Output(UInt(64.W))
 }
 
 
@@ -156,6 +157,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.bits.address := baseRequest.address + (TotalCacheLinesSent * 0x40.U)
                 sendRequest.valid := true.B && !ModifiedRequestsSent 
                 io.FetchUnit.FetchReq <> sendRequest
+                io.FetchUnit.baseAddr := baseRequest.address
 
 
 
@@ -173,7 +175,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 TotalReqSize                := Mux(ModifiedRequestsSent, 
                     CurrentColumnWidths.reduce( _ + _) + CurrentColumnOffsets.reduce(_ + _), TotalReqSize)
                 // if we have an offset > 64 we can skip a line)
-                TotalCacheLinesNeeded       := Mux(ModifiedRequestsSent, 
+                TotalCacheLinesNeeded       := Mux(ModifiedRequestsSent, // maybe an error?
                     divideCeil(TotalReqSize, CacheLineSize.U), TotalCacheLinesNeeded) 
                 TotalCacheLinesSent         := Mux(!io.FetchUnit.FetchReq.fire, TotalCacheLinesSent,
                     Mux(TotalCacheLinesSent < TotalCacheLinesNeeded - 1.U, TotalCacheLinesSent + 1.U, 0.U))

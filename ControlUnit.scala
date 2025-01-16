@@ -67,6 +67,9 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
         val spm = Module(new ScratchPadRME(params))
 
+
+        //io.FetchUnitPort.bits.data
+
     }
 
 }

@@ -20,7 +20,9 @@ case class FetchUnitControlPort() extends Bundle
 
 
 
-
+/* 
+    I think we can have several of these, and overlap their latency
+*/
 
 class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
     implicit p: Parameters) extends LazyModule {
@@ -41,7 +43,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         
         // Control Unit Port
-        val outSPM = DecoupledIO(FetchUnitControlPort())
+        val ControlUnit = DecoupledIO(FetchUnitControlPort())
 
 
         // Trapper port --> don't think we need this
@@ -67,20 +69,19 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
             Handle outbound requests to DRAM
         */
         // Store Current Request in a register to keep its state, pass beating request out in Wire
+        val hasActiveRequest = RegInit(false.B)
         val currentlyBeating = RegInit(false.B)
         val currentRequest = Reg(new TLBundleA(tlOutParams))
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
-
-        
-        val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
+        val currentBaseAddr = RegInit(0.U(64.W))
+        val (a_first, a_last, a_done) = tlOutEdge.firstlast(tlOutBundle.a)
         currentlyBeating := Mux(currentlyBeating, !a_last, io.Requestor.FetchReq.fire)
-        io.Requestor.FetchReq.ready := a_done || !currentlyBeating
         currentRequest := Mux(io.Requestor.FetchReq.fire, io.Requestor.FetchReq.bits, currentRequest)
-
         beatingRequest.bits := currentRequest
-        beatingRequest.valid := currentlyBeating // if we are currently beating request will be valid
-        io.OutReq <> beatingRequest
+        beatingRequest.valid := currentlyBeating
+        io.Requestor.FetchReq.ready := !currentlyBeating && !hasActiveRequest
 
+        io.OutReq <> beatingRequest
 
 
         /*
@@ -91,11 +92,13 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         //val dataRegWriteIndex = RegInit(0.U(log2Ceil(64).W)) //  index for each byte
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
         val dataRegFull = RegInit(false.B)
+        val receivedAllData = RegInit(true.B)
+
 
         io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data
         dataReg := Mux(io.inReply.fire, Cat((dataReg << io.inReply.bits.data.getWidth), io.inReply.bits.data), dataReg)
-
+        
         /*
             if (done receiving data)
                 dataRegFull = true
@@ -105,10 +108,13 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
                 else
                     dataReg is not full and we stay false
         */
-        dataRegFull := Mux(d_last, true.B, Mux(dataRegFull, !io.outSPM.fire, false.B))
-        io.outSPM.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
-        
-        
+        dataRegFull := Mux(d_last, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
+        io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
+        io.ControlUnit.bits.baseAddr := currentRequest.address
+        io.ControlUnit.bits.data := dataReg
+
+        // we no longer have an active request when we send it to control unit
+        hasActiveRequest := Mux(io.Requestor.FetchReq.fire, true.B, !io.ControlUnit.fire)
 
     }
 }
