@@ -66,7 +66,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(new TLBundleA(tlOutParams), 16, flow=false))
         val baseRequest = Reg(new TLBundleA(tlOutParams))
-        val ModifiedRequestsSent = RegInit(true.B) // track if we have sent all the necessary requests
+        val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
 
         // What happens if enabled column count changes while we're handling request? 
         // I think this will lead to issues of incomplete request formation
@@ -79,30 +79,34 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val CurrentFrameOffset = RegInit(0.U(32.W))
 
         // This should give us the total size in bytes we need to grab
-        val TotalReqSize = CurrentColumnWidths.reduce( _ + _) + CurrentColumnOffsets.reduce(_ + _)
-        val TotalCacheLinesNeeded = divideCeil(TotalReqSize, CacheLineSize.U) // if we have an offset > 64 we can skip a line
+        val TotalReqSize = RegInit(0.U(32.W))
+        val TotalCacheLinesNeeded = RegInit(0.U(8.W))
+        val TotalCacheLinesSent = RegInit(0.U(4.W))
+        
 
 
-        // Default outputs
+
+        /* 
+            Defaults
+        */
         stateReg := stateReg
-        io.Trapper.Request.ready := ModifiedRequestsSent // ready for another request if we have sent all others
+        baseRequest := baseRequest
+        requestQueue.io.enq <> io.Trapper.Request // queue up requests to prevent stalls
+        io.FetchUnit.FetchReq.valid := false.B // default to false
+        io.FetchUnit.FetchReq.bits := baseRequest // default 
+        requestQueue.io.deq.ready := ModifiedRequestsSent // start new requests when all of old ones have been sent
+        
 
         
 
         // Set outputs for each state
         switch(stateReg)
         {
-            is (idle) {
-                io.Trapper.Request.ready := true.B
+            is (idle) 
+            {
             }
-
-
-
-            is (active) {
-                
-
-                
-                
+            is (active) 
+            {
             }
         }
 
@@ -112,16 +116,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         switch(stateReg)
         {
             is (idle) {
-                stateReg := Mux(io.Trapper.Request.fire, active, idle)
+                // When we have a new request we are now active
+                stateReg := Mux(!ModifiedRequestsSent, active, idle)
 
-
-
-
-
-                ModifiedRequestsSent := Mux(io.Trapper.Request.fire, false.B, true.B)
-
-
-
+                // when we receive a new request in, we have no longer sent all requests
+                ModifiedRequestsSent := Mux(requestQueue.io.deq.fire, false.B, true.B)
+                baseRequest := requestQueue.io.deq.bits
 
 
                 /*
@@ -140,10 +140,22 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
 
             is (active) {
+                /*
+                    If we have sent all the necessary requests, we transition back to idle state
+                */
                 stateReg := Mux(ModifiedRequestsSent, idle, active)
 
+                baseRequest := baseRequest // keep base request for all active states
 
-
+                /*
+                    Send requests to fetch unit
+                */
+                val sendRequest = Wire(DecoupledIO(new TLBundleA(tlOutParams)))
+                sendRequest.bits <> baseRequest
+                // cache line size = 64 bytes, so we increment each request by 0x40
+                sendRequest.bits.address := baseRequest.address + (TotalCacheLinesSent * 0x40.U)
+                sendRequest.valid := true.B && !ModifiedRequestsSent 
+                io.FetchUnit.FetchReq <> sendRequest
 
 
 
@@ -158,10 +170,15 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 CurrentColumnWidths         := Mux(ModifiedRequestsSent, io.Config.ColumnWidths, CurrentColumnWidths)
                 CurrentColumnOffsets        := Mux(ModifiedRequestsSent, io.Config.ColumnOffsets, CurrentColumnOffsets)
                 CurrentFrameOffset          := Mux(ModifiedRequestsSent, io.Config.FrameOffset, CurrentFrameOffset)
-
-
-
-                //ModififiedRequestsSent := Mux(CurrentCol)
+                TotalReqSize                := Mux(ModifiedRequestsSent, 
+                    CurrentColumnWidths.reduce( _ + _) + CurrentColumnOffsets.reduce(_ + _), TotalReqSize)
+                // if we have an offset > 64 we can skip a line)
+                TotalCacheLinesNeeded       := Mux(ModifiedRequestsSent, 
+                    divideCeil(TotalReqSize, CacheLineSize.U), TotalCacheLinesNeeded) 
+                TotalCacheLinesSent         := Mux(!io.FetchUnit.FetchReq.fire, TotalCacheLinesSent,
+                    Mux(TotalCacheLinesSent < TotalCacheLinesNeeded - 1.U, TotalCacheLinesSent + 1.U, 0.U))
+                ModifiedRequestsSent        := Mux(TotalCacheLinesSent === (TotalCacheLinesNeeded - 1.U) && 
+                    io.FetchUnit.FetchReq.fire, true.B, false.B)
             }
         }
 
