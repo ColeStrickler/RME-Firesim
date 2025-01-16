@@ -68,6 +68,30 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         val spm = Module(new ScratchPadRME(params))
 
 
+
+        /*
+            Column extractor takes data out of the incoming lines and sends it to packer
+        */
+
+
+
+        /*
+            When packer has fully backed the line, we store to SPM and send it to trapper
+            so it can be sent back to memory
+
+
+            By storing packed data, we have all or nothing access, save space, and can more easily check whether or not
+            the line has been assembled
+        */
+
+
+        val data = io.FetchUnitPort.bits.data // should actually come from packer
+        val dataAddr = io.FetchUnitPort.bits.baseAddr // this is base address of request
+        val dataOffset = dataAddr - params.rmeaddress.U  // we use this to get store location
+        val dataStoreAddr = dataOffset % params.DataSPMSize.U // this is basic hash function that gets us our storage location
+
+       // spm.io.dataSPMIO.
+
         //io.FetchUnitPort.bits.data
 
     }

@@ -21,6 +21,7 @@ import freechips.rocketchip.subsystem.Attachable
 case class RelMemParams (
     regaddress: Int,
     rmeaddress: BigInt,
+    rmeAddressSize: BigInt,
     mbus : MemoryBus,
     controlMMIOAddress : Int,
     controlBeatBytes : Int,

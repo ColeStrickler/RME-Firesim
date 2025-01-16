@@ -67,10 +67,13 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdge, tlInBundle: TLBundle)(
         // Handle inbound request logic
 
 
-
+        /*
+        
+            We should get replies from the Control Unit
+        */
 
         // Handle reply logic
-        val rme_reply_queue = Module(new Queue(new TLBundleD(tlInParams), 128, flow=false))
+        val rme_reply_queue = Module(new Queue(new TLBundleD(tlInParams), 16, flow=false))
         val currentRequest = Wire(Decoupled(new TLBundleD(tlInParams)))
         val (d_first, d_last, d_done) = tlInEdge.firstlast(currentRequest)
         val currentlyBeating = RegInit(false.B)

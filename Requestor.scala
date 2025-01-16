@@ -80,7 +80,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val CurrentFrameOffset = RegInit(0.U(32.W))
 
         // This should give us the total size in bytes we need to grab
-        val TotalReqSize = RegInit(0.U(32.W))
         val TotalCacheLinesNeeded = RegInit(0.U(8.W))
         val TotalCacheLinesSent = RegInit(0.U(4.W))
         
@@ -136,6 +135,14 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 CurrentFrameOffset          := io.Config.FrameOffset
 
 
+                // Computer how much data we need to fetch to construct a single cache line
+                val singleRowEnColSize = (io.Config.ColumnWidths * io.Config.EnabledColumnCount)
+                val rowsNeeded = divideCeil(64.U, singleRowEnColSize)
+                val cacheLinesNeeded = divideCeil(rowsNeeded*io.Config.RowSize, 64.U)
+                TotalCacheLinesNeeded       := cacheLinesNeeded
+                TotalCacheLinesSent         := 0.U
+
+
             }
 
 
@@ -172,11 +179,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 CurrentColumnWidths         := Mux(ModifiedRequestsSent, io.Config.ColumnWidths, CurrentColumnWidths)
                 CurrentColumnOffsets        := Mux(ModifiedRequestsSent, io.Config.ColumnOffsets, CurrentColumnOffsets)
                 CurrentFrameOffset          := Mux(ModifiedRequestsSent, io.Config.FrameOffset, CurrentFrameOffset)
-                TotalReqSize                := Mux(ModifiedRequestsSent, 
-                    CurrentColumnWidths.reduce( _ + _) + CurrentColumnOffsets.reduce(_ + _), TotalReqSize)
                 // if we have an offset > 64 we can skip a line)
                 TotalCacheLinesNeeded       := Mux(ModifiedRequestsSent, // maybe an error?
-                    divideCeil(TotalReqSize, CacheLineSize.U), TotalCacheLinesNeeded) 
+                    0.U, TotalCacheLinesNeeded) 
                 TotalCacheLinesSent         := Mux(!io.FetchUnit.FetchReq.fire, TotalCacheLinesSent,
                     Mux(TotalCacheLinesSent < TotalCacheLinesNeeded - 1.U, TotalCacheLinesSent + 1.U, 0.U))
                 ModifiedRequestsSent        := Mux(TotalCacheLinesSent === (TotalCacheLinesNeeded - 1.U) && 

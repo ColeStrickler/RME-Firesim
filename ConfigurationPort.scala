@@ -17,7 +17,7 @@ case class RMEConfigPortIO() extends Bundle
     val RowSize = UInt(32.W) // size of each row in database
     val RowCount = UInt(32.W) // count of each row in database
     val EnabledColumnCount = UInt(4.W) // total number of enabled columns
-    val ColumnWidths = Vec(15, UInt(6.W)) // width of ith enabled column
+    val ColumnWidths = UInt(7.W) // width of ith enabled column
     val ColumnOffsets = Vec(15, UInt(6.W)) // offset off column j from column j-1
     val FrameOffset = UInt(32.W)
 }
@@ -44,7 +44,7 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
-        val r_ColumnWidths = Seq.fill(15)(RegInit(0.U(6.W)))
+        val r_ColumnWidths = RegInit(0.U(6.W))
         val r_ColumnOffsets = Seq.fill(15)(RegInit(0.U(6.W)))
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
@@ -53,16 +53,14 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
         val mmio_RowSize = Seq((0x0) -> Seq(RegField(r_RowSize.getWidth, r_RowSize, RegFieldDesc("RowSize", "RowSizeRME"))))
         val mmio_RowCount = Seq((0x10) -> Seq(RegField(r_RowCount.getWidth, r_RowCount, RegFieldDesc("RowCount", "RowCountRME"))))
         val mmio_EnabledColumnCount = Seq((0x20) -> Seq(RegField(r_EnabledColumnCount.getWidth, r_EnabledColumnCount, RegFieldDesc("EnabledColumnCount", "EnabledColumnCountRME"))))
-        val mmio_ColumnWidths = r_ColumnWidths.zipWithIndex.map {case (reg, i) => 
-            (i * 10 + 0x30) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnWidth${i}", "ColumnWidth")))    
-        }
+        val mmio_ColumnWidth = Seq((0x30) -> Seq(RegField(r_ColumnWidths.getWidth, r_ColumnWidths, RegFieldDesc(s"ColumnWidth", "ColumnWidth"))))
         val mmio_ColumnOffsets = r_ColumnOffsets.zipWithIndex.map {case (reg, i) => 
-            (i * 0x10 +  15 * 0x10 + 0x30) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnOffset${i}", "ColumnOffset")))    
+            (i * 0x10 + 0x30) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnOffset${i}", "ColumnOffset")))    
         }
-        val mmio_FrameOffset = Seq((30 * 0x10 + 0x30) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
-        val mmio_Reset = Seq((31 * 0x10 + 0x30) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
+        val mmio_FrameOffset = Seq((15 * 0x10 + 0x30) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
+        val mmio_Reset = Seq((16 * 0x10 + 0x30) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
         val mmreg = mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
-                    mmio_ColumnWidths ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
+                    mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
         val regmap = ctlnode.regmap(mmreg: _*)
 
         /*
@@ -75,9 +73,9 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
             r_RowCount := 0.U
             r_EnabledColumnCount := 0.U
             r_FrameOffset := 0.U
+            r_ColumnWidths := 0.U
             for (i <- 0 until 15)
-            {
-                r_ColumnWidths(i) := 0.U
+            { 
                 r_ColumnOffsets(i) := 0.U
             }
         }
@@ -90,9 +88,9 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
         io.config.RowCount := r_RowCount
         io.config.EnabledColumnCount := r_EnabledColumnCount
         io.config.FrameOffset := r_FrameOffset
+        io.config.ColumnWidths := r_ColumnWidths
         for (i <- 0 until 15)
         {
-             io.config.ColumnWidths(i) := r_ColumnWidths(i)
              io.config.ColumnOffsets(i) := r_ColumnOffsets(i)
         }
     }
