@@ -12,16 +12,21 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class FetchUnitControlPort() extends Bundle
+case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
 {
     val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
-    val baseAddr = Output(UInt(64.W)) // base address of the request
+    val baseReq = Output(new TLBundleA(tlParams))
 }
 
 
 
 /* 
     I think we can have several of these, and overlap their latency
+
+
+
+    We will also need the incoming requests back to the RME somehow, otherwise we may get a reply that is meant for normal memory
+    
 */
 
 class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
@@ -43,7 +48,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         
         // Control Unit Port
-        val ControlUnit = DecoupledIO(FetchUnitControlPort())
+        val ControlUnit = DecoupledIO(FetchUnitControlPort(tlOutParams))
 
 
         // Trapper port --> don't think we need this
@@ -62,6 +67,12 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) {
+
+
+
+        val baseReq = RegInit(new TLBundleA(tlOutParams))
+        baseReq := Mux(io.Requestor.isBaseRequest && io.Requestor.FetchReq.fire, io.Requestor.FetchReq.bits, baseReq)
+
 
 
         /*
@@ -110,7 +121,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         */
         dataRegFull := Mux(d_last, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
         io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
-        io.ControlUnit.bits.baseAddr := currentRequest.address
+        io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
 
         // we no longer have an active request when we send it to control unit

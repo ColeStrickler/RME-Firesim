@@ -9,19 +9,98 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+import org.apache.commons.compress.java.util.jar.Pack200.Packer
 
 
 
+case class PackerColExtractIO() extends Bundle {
+    val dataIn = Output(UInt(512.W))
+    val dataSize = Output(UInt(10.W))
+}
 
 
+class PackerRME extends Module {
 
-class PackerRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
-    implicit p: Parameters) extends LazyModule {
+    val io = IO(new Bundle {
+        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO()))
+        val PackedLine = DecoupledIO(UInt(512.W))
+    })
 
 
-    lazy val module = new Impl
-    class Impl extends LazyModuleImp(this) {
+    val packedLine = RegInit(0.U(512.W))
+    val tmpWire = WireInit(0.U(512.W))
+    val dataInSizeBits = io.ColExtractor.bits.dataSize * 8.U
 
+    val NumPackedBytes = RegInit(0.U(7.W))
 
+    val DataSize = io.ColExtractor.bits.dataSize
+    val newDataIn = io.ColExtractor.fire
+
+    // we keep taking data 
+    val dataInBounds = NumPackedBytes + io.ColExtractor.bits.dataSize <= 64.U
+    val willOverflow = io.ColExtractor.valid && !dataInBounds
+    val ready = io.ColExtractor.valid && dataInBounds
+    io.ColExtractor.ready := ready
+
+    /*
+        We will need to handle cases when the data doesn't exactly add up to 64bytes eventually
+    */
+    when (newDataIn)
+    {
+        // valid data sizes
+        assert(DataSize === 1.U || DataSize === 2.U || DataSize === 4.U || DataSize === 8.U ||
+        DataSize === 16.U || DataSize === 32.U || DataSize === 64.U)
+        switch(DataSize)
+        {
+            is (1.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(512, 16))
+                NumPackedBytes := NumPackedBytes + 1.U
+            }
+            is (2.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(512, 16))
+                NumPackedBytes := NumPackedBytes + 2.U
+            }
+            is(4.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(31, 0), (packedLine >> (dataInSizeBits))(512, 32))
+                NumPackedBytes := NumPackedBytes + 4.U
+            }
+            is (8.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(63, 0), (packedLine >> (dataInSizeBits))(512, 64))
+                NumPackedBytes := NumPackedBytes + 8.U
+            }
+            is (16.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(127, 0), (packedLine >> (dataInSizeBits))(512, 128))
+                NumPackedBytes := NumPackedBytes + 16.U
+            }
+            is (32.U)
+            {
+                packedLine := Cat(io.ColExtractor.bits.dataIn(255, 0), (packedLine >> (dataInSizeBits))(512, 256))
+                NumPackedBytes := NumPackedBytes + 32.U
+            }
+            is (64.U)
+            {
+                packedLine := io.ColExtractor.bits.dataIn
+                NumPackedBytes := NumPackedBytes + 64.U
+            }
+        }
     }
+    
+
+
+    // willOverFlow gets set when the next value would overflow the cacheline
+    io.PackedLine.valid := (NumPackedBytes === 64.U)  || willOverflow
+    io.PackedLine.bits := packedLine
+        
+
+    when (io.PackedLine.fire)
+    {
+        NumPackedBytes := 0.U
+    }
+
+    
 }

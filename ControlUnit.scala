@@ -8,6 +8,7 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+import org.apache.commons.compress.java.util.jar.Pack200.Packer
 
 
 
@@ -36,7 +37,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         // Fetch Unit Port
-        val FetchUnitPort = DecoupledIO(Flipped(FetchUnitControlPort()))
+        val FetchUnitPort = DecoupledIO(Flipped(FetchUnitControlPort(tlOutEdge.bundle)))
 
 
         // Trapper Port
@@ -66,7 +67,16 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     class Impl extends LazyModuleImp(this) {
 
         val spm = Module(new ScratchPadRME(params))
+        val ColExtractor = Module(new ColumnExtractor)
+        val packer = Module(new PackerRME)
+        ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
+        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.valid
+        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready
 
+
+
+        io.FetchUnitPort.bits.baseReq // --> need to make sure we can grab and use this correctly
+        packer.io.ColExtractor <> ColExtractor.io.Packer
 
 
         /*
@@ -85,10 +95,10 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         */
 
 
-        val data = io.FetchUnitPort.bits.data // should actually come from packer
-        val dataAddr = io.FetchUnitPort.bits.baseAddr // this is base address of request
-        val dataOffset = dataAddr - params.rmeaddress.U  // we use this to get store location
-        val dataStoreAddr = dataOffset % params.DataSPMSize.U // this is basic hash function that gets us our storage location
+        //val data = io.FetchUnitPort.bits.data // should actually come from packer
+        //val dataAddr = io.FetchUnitPort.bits.baseAddr // this is base address of request
+        //val dataOffset = dataAddr - params.rmeaddress.U  // we use this to get store location
+        //val dataStoreAddr = dataOffset % params.DataSPMSize.U // this is basic hash function that gets us our storage location
 
        // spm.io.dataSPMIO.
 
