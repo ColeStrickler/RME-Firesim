@@ -23,7 +23,7 @@ import freechips.rocketchip.subsystem.Attachable
 
 
 
-class TrapperRME(params: RelMemParams, tlInEdge: TLEdge, tlInBundle: TLBundle)(
+class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)(
     implicit p: Parameters) extends LazyModule {
     val tlInParams = tlInEdge.bundle
     val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
@@ -36,7 +36,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdge, tlInBundle: TLBundle)(
 
 
         val Requestor = RequestorTrapperPort(tlInParams)
-        val ControlUnit = Flipped(ControlUnitTrapperPort())
+        val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
 
     })
     
@@ -74,17 +74,38 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdge, tlInBundle: TLBundle)(
 
         // Handle reply logic
         val rme_reply_queue = Module(new Queue(new TLBundleD(tlInParams), 16, flow=false))
+        val replyCacheLine = RegInit(0.U(512.W))
+        val replyToBaseReq = RegInit(new TLBundleA(tlInParams))
+
+        val DataWidth = tlInParams.dataBits
+
+        replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, replyCacheLine)
+        replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
+        io.ControlUnit.ready := !currentlyBeating
+        
+
+
+        println("TLBundleD size bits %d\n", tlInParams.sizeBits)
+        val dataChanSize = tlInEdge.size(tlInBundle.d.bits)
         val currentRequest = Wire(Decoupled(new TLBundleD(tlInParams)))
         val (d_first, d_last, d_done) = tlInEdge.firstlast(currentRequest)
+        val (_, _, _, beatCount) = tlInEdge.count(currentRequest)
         val currentlyBeating = RegInit(false.B)
         val toSend = Reg(new TLBundleD(tlInParams))
+        val currentDataWire = WireInit(0.U(DataWidth.W))
+        currentDataWire := (replyCacheLine >> (DataWidth.U*beatCount))(DataWidth-1, 0) // get data
+        
 
 
-        currentlyBeating := Mux(currentlyBeating, !d_last, rme_reply_queue.io.deq.fire)
+        currentlyBeating := Mux(currentlyBeating, !d_last, io.ControlUnit.fire)
         rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
-        toSend := Mux(rme_reply_queue.io.deq.fire, rme_reply_queue.io.deq.bits, toSend)
+
+
+
+        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, 0.U), toSend)
 
         currentRequest.bits <> toSend
+        currentRequest.bits.data := currentDataWire
         currentRequest.valid := currentlyBeating
         io.TLOutD <> currentRequest
 

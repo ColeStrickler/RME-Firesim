@@ -21,9 +21,10 @@ case class ControlUnitRequestorPort() extends Bundle
 
 }
 
-case class ControlUnitTrapperPort() extends Bundle 
+case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle 
 {
-
+    val baseReq = Output(new TLBundleA(tlParams))
+    val cacheLine = Output(UInt(512.W)) 
 }
 
 
@@ -31,9 +32,11 @@ case class ControlUnitTrapperPort() extends Bundle
 
 class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
     implicit p: Parameters) extends LazyModule {
+
+    val tlParams = tlOutEdge.bundle
     val io = IO(new Bundle{
         // Config Port 
-        val Config = Input(RMEConfigPortIO())
+        //val Config = Input(RMEConfigPortIO())
 
 
         // Fetch Unit Port
@@ -41,7 +44,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         // Trapper Port
-        val TrapperPort = ControlUnitTrapperPort()
+        val TrapperPort = DecoupledIO(ControlUnitTrapperPort(tlParams))
 
 
 
@@ -49,7 +52,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         val RequestorPort = ControlUnitRequestorPort()
 
     })
-
+    
     /*
         We need to orchestrate the following:
 
@@ -66,7 +69,11 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) {
 
-        val spm = Module(new ScratchPadRME(params))
+        //val spm = Module(new ScratchPadRME(params))
+        
+        
+        
+        val BaseReq = Reg(new TLBundleA(tlParams))
         val ColExtractor = Module(new ColumnExtractor)
         val packer = Module(new PackerRME)
         ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
@@ -74,11 +81,13 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready
 
 
-
-        io.FetchUnitPort.bits.baseReq // --> need to make sure we can grab and use this correctly
+        // this should fire after we get an entire cache line
+        BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
         packer.io.ColExtractor <> ColExtractor.io.Packer
-
-
+        io.TrapperPort.bits.baseReq <> BaseReq
+        io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
+        io.TrapperPort.valid := packer.io.PackedLine.valid
+        packer.io.PackedLine.ready := io.TrapperPort.ready
         /*
             Column extractor takes data out of the incoming lines and sends it to packer
         */
