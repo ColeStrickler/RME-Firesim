@@ -19,9 +19,46 @@ import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
 
 
+class ConditionalDemuxD(params: TLBundleParameters) extends Module {
+  val io = IO(new Bundle {
+    val dataIn = Flipped(DecoupledIO(new TLBundleD(params))) // Single input (8-bit)
+    val sel    = Input(Bool())   // Selector (1-bit)
+    val outA   = DecoupledIO(new TLBundleD(params))// Output to location A
+    val outB   = DecoupledIO(new TLBundleD(params)) // Output to location B
+  })
+
+  // Default both outputs to zero
+  val readyOther = Reg(Bool()) // so we have somewhere to connect it to
+
+  val dummyMessage = Wire(new TLBundleD(params))
+  dummyMessage.opcode := 0.U
+  dummyMessage.param := 0.U
+  dummyMessage.size := 0.U
+  dummyMessage.source := 0.U
+  dummyMessage.data := 0.U
+  dummyMessage.data := 0.U
+  dummyMessage.corrupt := false.B
 
 
-class ConditionalDemux(params: TLBundleParameters) extends Module {
+
+  // Route input based on selector
+  when(io.sel) {
+    io.outB <> io.dataIn
+    io.outA.bits := dummyMessage
+    io.outA.valid := false.B
+    readyOther := io.outA.ready
+    
+  }.otherwise {
+    io.outA <> io.dataIn
+    io.outB.bits := dummyMessage
+    io.outB.valid := false.B
+    readyOther := io.outB.ready
+
+  }
+}
+
+
+class ConditionalDemuxA(params: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
     val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
     val sel    = Input(Bool())   // Selector (1-bit)
@@ -76,6 +113,17 @@ class ConditionalDemux(params: TLBundleParameters) extends Module {
 
   }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 case class ScratchPadIO(MemDepth: Int, MemWidth: Int) extends Bundle

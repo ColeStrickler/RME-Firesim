@@ -15,6 +15,7 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
+import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
 
 
 
@@ -73,7 +74,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
-    //val ConfigPort = ConfigurationPortRME(params, device)
+    
 
     for (i <- 0 until nClients)
     {
@@ -88,12 +89,66 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       println(s"in.d.numBeats ${in_edge.numBeats(in.d.bits)}\n")
       val inDBeats = in_edge.numBeats(in.d.bits)
 
-      val demux = Module(new ConditionalDemux(inParams))
+      
+      val demux = Module(new ConditionalDemuxA(inParams))
       val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
       val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+      val ConfigPort = new ConfigurationPortRME(params, device)
+      val trapper = new TrapperRME(params, in_edge, in)
+      val requestor = new RequestorRME(params, in_edge, out_edge, out)
+      val fetch_unit = new FetchUnitRME(params, out_edge, out)
+      val control_unit = new ControlUnitRME(params, out_edge, out)
+      val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))
       
+
+      /*
+        Input and output of RME
+      */
+      trapper.io.TLInA <> in.a
+      replyFromDRAMDemux.io.dataIn <> out.d
+      fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
+
+      // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
+      replyFromDRAMDemux.io.sel := fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source)
+      // Either from trapper or directly from DRAM if not an rme request
+      TLArbiter.robin(in_edge, in.d, trapper.io.TLInD, replyFromDRAMDemux.io.outA)
+
+      // Outgoing arbiter for passthrough and RME requests
+      TLArbiter.robin(out_edge, out.a, trapper.io.TLPassThroughOut, fetch_unit.io.OutReq)
+
+
+
+      /*
+        Connections between RME modules
+      */
+
+      requestor.io.Trapper <> trapper.io.Requestor
+      trapper.io.ControlUnit <> control_unit.io.TrapperPort
+      fetch_unit.io.Requestor <> requestor.io.FetchUnit
+      control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
+
+
+
+
+
+
+
+
       //rme_in_queue.io.enq <> in.a // everything passes through queue
       //// defaults
       //rme_in_queue.io.enq.valid := false.B
@@ -227,6 +282,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       // back to cache arbiter
       // previously was taking directly from the reply queue before trying to implement beats
       TLArbiter.robin(in_edge, in.d, out.d, currentRequest)
+
+
+      
     }
 
       

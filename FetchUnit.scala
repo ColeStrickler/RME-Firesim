@@ -45,6 +45,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         // DRAM Port
         val OutReq = DecoupledIO(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
         val inReply = Flipped(DecoupledIO(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
+        val SrcId = Valid(UInt(tlOutParams.sourceBits.W)) // use to route incoming requests back to here
 
         
         // Control Unit Port
@@ -126,6 +127,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(io.Requestor.FetchReq.fire, true.B, !io.ControlUnit.fire)
-
+        io.SrcId.bits := currentRequest.source
+        io.SrcId.valid := hasActiveRequest
     }
 }

@@ -29,7 +29,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
     val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
     val io = IO(new Bundle {
         val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
-        val TLOutD = DecoupledIO(new TLBundleD(tlInParams))
+        val TLInD = DecoupledIO(new TLBundleD(tlInParams))
         val TLPassThroughOut = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
         
 
@@ -55,7 +55,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) {
         val isRMERequest = ToRME(io.TLInA.bits.address)
-        val demux = Module(new ConditionalDemux(tlInParams))
+        val demux = Module(new ConditionalDemuxA(tlInParams))
         demux.io.dataIn <> io.TLInA
         demux.io.sel := isRMERequest
         io.TLPassThroughOut <> demux.io.outA
@@ -107,7 +107,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
         currentRequest.bits <> toSend
         currentRequest.bits.data := currentDataWire
         currentRequest.valid := currentlyBeating
-        io.TLOutD <> currentRequest
+        io.TLInD <> currentRequest
 
       //currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
       //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
