@@ -16,7 +16,7 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
-
+import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 
@@ -87,9 +87,9 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
 
         println("TLBundleD size bits %d\n", tlInParams.sizeBits)
         val dataChanSize = tlInEdge.size(tlInBundle.d.bits)
-        val currentRequest = Wire(Decoupled(new TLBundleD(tlInParams)))
-        val (d_first, d_last, d_done) = tlInEdge.firstlast(currentRequest)
-        val (_, _, _, beatCount) = tlInEdge.count(currentRequest)
+        val currentRequest = Wire(new TLBundleD(tlInParams))
+        val (d_first, d_last, d_done) = tlInEdge.firstlast(io.TLInD)
+        val (_, _, _, beatCount) = tlInEdge.count(io.TLInD)
         val currentlyBeating = RegInit(false.B)
         val toSend = Reg(new TLBundleD(tlInParams))
         val currentDataWire = WireInit(0.U(DataWidth.W))
@@ -104,10 +104,9 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
 
         toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, 0.U), toSend)
 
-        currentRequest.bits <> toSend
-        currentRequest.bits.data := currentDataWire
-        currentRequest.valid := currentlyBeating
-        io.TLInD <> currentRequest
+        currentRequest <> toSend
+        io.TLInD.valid := currentlyBeating
+        io.TLInD.bits <> currentRequest
 
       //currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
       //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 

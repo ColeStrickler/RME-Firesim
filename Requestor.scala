@@ -37,7 +37,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             val FetchUnit = RequestorFetchUnitPort(tlOutParams)
 
             // Control Unit Port
-            val ControlUnit = Flipped(ControlUnitRequestorPort())
+            //val ControlUnit = Flipped(ControlUnitRequestorPort())
 
             // Config Port
             val Config = Input(RMEConfigPortIO())

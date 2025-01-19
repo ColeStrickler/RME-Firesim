@@ -29,7 +29,7 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
     
 */
 
-class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
+class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, tlInEdge: TLEdge)(
     implicit p: Parameters) extends LazyModule {
 
     val tlOutParams = tlOutEdge.bundle
@@ -43,7 +43,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         */
 
         // DRAM Port
-        val OutReq = DecoupledIO(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
+        val OutReq = Decoupled(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
         val inReply = Flipped(DecoupledIO(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
         val SrcId = Valid(UInt(tlOutParams.sourceBits.W)) // use to route incoming requests back to here
 
@@ -105,7 +105,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
         val dataRegFull = RegInit(false.B)
         val receivedAllData = RegInit(true.B)
-
+        val corrupt = RegInit(false.B)
 
         io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data

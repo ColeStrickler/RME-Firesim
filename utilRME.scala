@@ -23,8 +23,8 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
     val dataIn = Flipped(DecoupledIO(new TLBundleD(params))) // Single input (8-bit)
     val sel    = Input(Bool())   // Selector (1-bit)
-    val outA   = DecoupledIO(new TLBundleD(params))// Output to location A
-    val outB   = DecoupledIO(new TLBundleD(params)) // Output to location B
+    val outA   = Decoupled(new TLBundleD(params))// Output to location A
+    val outB   = Decoupled(new TLBundleD(params)) // Output to location B
   })
 
   // Default both outputs to zero
@@ -36,21 +36,19 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
   dummyMessage.size := 0.U
   dummyMessage.source := 0.U
   dummyMessage.data := 0.U
-  dummyMessage.data := 0.U
-  dummyMessage.corrupt := false.B
 
 
 
   // Route input based on selector
   when(io.sel) {
     io.outB <> io.dataIn
-    io.outA.bits := dummyMessage
+    io.outA <> io.dataIn
     io.outA.valid := false.B
     readyOther := io.outA.ready
     
   }.otherwise {
     io.outA <> io.dataIn
-    io.outB.bits := dummyMessage
+    io.outB <> io.dataIn
     io.outB.valid := false.B
     readyOther := io.outB.ready
 

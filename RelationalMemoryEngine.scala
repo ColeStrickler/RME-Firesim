@@ -87,12 +87,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       out.e <> in.e
       println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
       println(s"in.d.numBeats ${in_edge.numBeats(in.d.bits)}\n")
-      val inDBeats = in_edge.numBeats(in.d.bits)
-
-      
-      val demux = Module(new ConditionalDemuxA(inParams))
-      val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
-      val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
+      //val inDBeats = in_edge.numBeats(in.d.bits)
+      //val demux = Module(new ConditionalDemuxA(inParams))
+      //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
+      //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
 
 
 
@@ -108,12 +106,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      val ConfigPort = new ConfigurationPortRME(params, device)
-      val trapper = new TrapperRME(params, in_edge, in)
-      val requestor = new RequestorRME(params, in_edge, out_edge, out)
-      val fetch_unit = new FetchUnitRME(params, out_edge, out)
-      val control_unit = new ControlUnitRME(params, out_edge, out)
-      val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))
+      val ConfigPort = LazyModule(new ConfigurationPortRME(params, device))
+      val trapper = LazyModule(new TrapperRME(params, in_edge, in))
+      val requestor = LazyModule(new RequestorRME(params, in_edge, out_edge, out))
+      val fetch_unit = LazyModule(new FetchUnitRME(params, out_edge, out, in_edge))
+      val control_unit = LazyModule(new ControlUnitRME(params, out_edge, out))
+      val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       
 
       /*
@@ -121,7 +119,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       */
       trapper.io.TLInA <> in.a
       replyFromDRAMDemux.io.dataIn <> out.d
-      fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
+
+
+
+
+
+      fetch_unit.io.inReply.bits := replyFromDRAMDemux.io.outB.bits
+      fetch_unit.io.inReply.valid := replyFromDRAMDemux.io.outB.valid
+      replyFromDRAMDemux.io.outB.ready := fetch_unit.io.inReply.ready
+      
+      //fetch_unit.io.inReply.bits.corrupt := replyFromDRAMDemux.io.outB.bits.corrupt
 
       // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
       replyFromDRAMDemux.io.sel := fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source)
@@ -141,7 +148,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       trapper.io.ControlUnit <> control_unit.io.TrapperPort
       fetch_unit.io.Requestor <> requestor.io.FetchUnit
       control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
-
+      
 
 
 
@@ -153,121 +160,89 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //// defaults
       //rme_in_queue.io.enq.valid := false.B
       //rme_in_queue.io.enq.bits := in.a.bits
-      when (in.a.fire)
-      {
-        // When in the rme address range we pass here
-        // handle requests in
-        SynthesizePrintf("in.a.fire: 0x%x\n", in.a.bits.address)
-        //rme_in_queue.io.enq <> in.a
-        
-      }
+      //when (in.a.fire)
+      //{
+      //  // When in the rme address range we pass here
+      //  // handle requests in
+      //  SynthesizePrintf("in.a.fire: 0x%x\n", in.a.bits.address)
+      //  //rme_in_queue.io.enq <> in.a  
+      //}
 
 
-      when (rme_in_queue.io.deq.valid)
-      {
-        SynthesizePrintf("rme_in_queue.io.deq.valid = 1\n")
-        SynthesizePrintf("rme_reply_queue.io.enq.ready = %d\n", rme_reply_queue.io.enq.ready)
-        SynthesizePrintf("rme_in_queue.io.deq.bits.address 0x%x\n", rme_in_queue.io.deq.bits.address)
-      }
+      //when (rme_in_queue.io.deq.valid)
+      //{
+      //  SynthesizePrintf("rme_in_queue.io.deq.valid = 1\n")
+      //  SynthesizePrintf("rme_reply_queue.io.enq.ready = %d\n", rme_reply_queue.io.enq.ready)
+      //  SynthesizePrintf("rme_in_queue.io.deq.bits.address 0x%x\n", rme_in_queue.io.deq.bits.address)
+      //}
 
 
-      val currentRequest = Wire(Decoupled(new TLBundleD(inParams)))
-      val (d_first, d_last, d_done) = in_edge.firstlast(currentRequest)
-      val currentlyBeating = RegInit(false.B)
-      val toSend = Reg(new TLBundleD(inParams))
+      //val currentRequest = Wire(Decoupled(new TLBundleD(inParams)))
+      //val (d_first, d_last, d_done) = in_edge.firstlast(currentRequest)
+      //val currentlyBeating = RegInit(false.B)
+      //val toSend = Reg(new TLBundleD(inParams))
+      //currentlyBeating := Mux(currentlyBeating, !d_last, rme_reply_queue.io.deq.fire)
+      //rme_reply_queue.io.deq.ready := !currentlyBeating
+      //when (rme_reply_queue.io.deq.fire)
+      //{
+      //  toSend <> rme_reply_queue.io.deq.bits
+      //}
+      //currentRequest.bits <> toSend
+      //currentRequest.valid := currentlyBeating
+      ////currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
+      //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
+      //rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
+      //val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
+      //println("dReply.size: %d\n", dReply.size)
+      //rme_reply_queue.io.enq.bits := dReply
+      //when (ToRME(in.a.bits.address))
+      //{
+      //  SynthesizePrintf("Setting selector to RME\n")
+      //}
+      //val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get)
+      //demux.io.dataIn <> in.a
+      //demux.io.sel := isRMERequest
+      //out.a <> demux.io.outA
+      //rme_in_queue.io.enq <> demux.io.outB
+      //when (demux.io.outB.valid)
+      //{
+      //  SynthesizePrintf("demux.io.outB.valid: %d\n", demux.io.outB.valid)
+      //  SynthesizePrintf("rme_in_queue.io.ready %d\n", rme_in_queue.io.enq.ready)
+      //}
+      //when (!rme_in_queue.io.enq.ready)
+      //{
+      //  SynthesizePrintf("!rme_in_queue.io.enq.valid --> CHECK\n")
+      //}
+      //when (ToRME(in.a.bits.address) && (in.a.bits.opcode =/= TLMessages.Get))
+      //{
+      //    SynthesizePrintf("Received non-Get request to RME 0x%x\n", in.a.bits.opcode)
+      //}
       
-      currentlyBeating := Mux(currentlyBeating, !d_last, rme_reply_queue.io.deq.fire)
-      rme_reply_queue.io.deq.ready := !currentlyBeating
-      
-      when (rme_reply_queue.io.deq.fire)
-      {
-        toSend <> rme_reply_queue.io.deq.bits
-      }
-
-      currentRequest.bits <> toSend
-      currentRequest.valid := currentlyBeating
-
-      //currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
-      rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
-      rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
-
-
-      val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
-      println("dReply.size: %d\n", dReply.size)
-      
-      rme_reply_queue.io.enq.bits := dReply
-
-
-
-      when (ToRME(in.a.bits.address))
-      {
-        SynthesizePrintf("Setting selector to RME\n")
-      }
-    
-
-      val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get)
-      
-
-      demux.io.dataIn <> in.a
-      demux.io.sel := isRMERequest
-      out.a <> demux.io.outA
-      rme_in_queue.io.enq <> demux.io.outB
-
-      when (demux.io.outB.valid)
-      {
-        SynthesizePrintf("demux.io.outB.valid: %d\n", demux.io.outB.valid)
-        SynthesizePrintf("rme_in_queue.io.ready %d\n", rme_in_queue.io.enq.ready)
-      }
-      
-
-      when (!rme_in_queue.io.enq.ready)
-      {
-        SynthesizePrintf("!rme_in_queue.io.enq.valid --> CHECK\n")
-      }
-
-
-      when (ToRME(in.a.bits.address) && (in.a.bits.opcode =/= TLMessages.Get))
-      {
-          SynthesizePrintf("Received non-Get request to RME 0x%x\n", in.a.bits.opcode)
-      }
-      
-      //CYCLE:  22990723637 io.dataIn.valid
-      //CYCLE:  22990723637 demux.io.outB.valid: 1
-      //CYCLE:  22990723637 Selector = 1
-      //CYCLE:  22990723637 Setting selector to RME
-      //CYCLE:  22990723637 rme_in_queue.io.ready 1
-      //CYCLE:  22990723638 rme_in_queue.io.deq.valid = 1
-      //CYCLE:  22990723638 rme_in_queue.io.deq.bits.address 0x110000000
-      //CYCLE:  22990723638 rme_reply_queue.io.enq.ready = 1
-      //CYCLE:  22990723638 RME Got in queue entry   1
-      //CYCLE:  22990723639 Firing request out of reply queue
-      when (ToRME(out.a.bits.address) && out.a.fire)
-      {
-        // When in the rme address range we pass here
-        // handle requests in
-        SynthesizePrintf("BAD! out request should've went to RME %x\n", out.a.bits.address)
-        //rme_in_queue.io.enq <> in.a
-        
-      }
+      //when (ToRME(out.a.bits.address) && out.a.fire)
+      //{
+      //  // When in the rme address range we pass here
+      //  // handle requests in
+      //  SynthesizePrintf("BAD! out request should've went to RME %x\n", out.a.bits.address)
+      //  //rme_in_queue.io.enq <> in.a  
+      //}
       //.otherwise
       //{
       //  
       //}
 
-      when (rme_reply_queue.io.deq.fire)
-      {
-        
-        SynthesizePrintf("Firing request out of reply queue\n")
-        SynthesizePrintf("d_first %d, d_last %d, d_done %d\n", d_first, d_last, d_done)
-      }
-      when (rme_reply_queue.io.count > 0.U)
-      {
-        SynthesizePrintf("RME Got reply queue entry %d\n", rme_reply_queue.io.count)
-      }
-      when (rme_in_queue.io.count > 0.U)
-      {
-        SynthesizePrintf("RME Got in queue entry %d\n", rme_in_queue.io.count)
-      }
+      //when (rme_reply_queue.io.deq.fire)
+      //{   
+      //  SynthesizePrintf("Firing request out of reply queue\n")
+      //  SynthesizePrintf("d_first %d, d_last %d, d_done %d\n", d_first, d_last, d_done)
+      //}
+      //when (rme_reply_queue.io.count > 0.U)
+      //{
+      //  SynthesizePrintf("RME Got reply queue entry %d\n", rme_reply_queue.io.count)
+      //}
+      //when (rme_in_queue.io.count > 0.U)
+      //{
+      //  SynthesizePrintf("RME Got in queue entry %d\n", rme_in_queue.io.count)
+      //}
 
       
 
@@ -281,7 +256,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       // back to cache arbiter
       // previously was taking directly from the reply queue before trying to implement beats
-      TLArbiter.robin(in_edge, in.d, out.d, currentRequest)
+      //TLArbiter.robin(in_edge, in.d, out.d, currentRequest)
 
 
       
