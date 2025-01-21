@@ -27,7 +27,7 @@ case class RequestorFetchUnitPort(params: TLBundleParameters) extends Bundle
 
 
 
-class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
+class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends LazyModule {
         val tlOutParams = tlOutEdge.bundle
         val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
@@ -40,12 +40,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             //val ControlUnit = Flipped(ControlUnitRequestorPort())
 
             // Config Port
-            val Config = Input(RMEConfigPortIO())
+            val Config = Flipped(RMEConfigPortIO())
 
             // Trapper Port
             val Trapper = Flipped(RequestorTrapperPort(tlInParams))
 
-        })
+        }).suggestName(s"requestorio_$instance")
 
 
 

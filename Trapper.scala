@@ -23,14 +23,14 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 
-class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)(
+class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends LazyModule {
     val tlInParams = tlInEdge.bundle
     val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
     val io = IO(new Bundle {
         val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
-        val TLInD = DecoupledIO(new TLBundleD(tlInParams))
-        val TLPassThroughOut = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
+        val TLInD = Flipped(DecoupledIO(new TLBundleD(tlInParams)))
+        val TLPassThroughOut = Flipped(DecoupledIO(new TLBundleA(tlInParams))).suggestName("trapperio")
         
 
 
@@ -38,7 +38,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
         val Requestor = RequestorTrapperPort(tlInParams)
         val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
 
-    })
+    }).suggestName(s"trapper_$instance")
     
     def ToRME(addr : UInt) : Bool = {
         val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + 0xfff.U)
@@ -58,7 +58,8 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle)
         val demux = Module(new ConditionalDemuxA(tlInParams))
         demux.io.dataIn <> io.TLInA
         demux.io.sel := isRMERequest
-        io.TLPassThroughOut <> demux.io.outA
+        io.TLPassThroughOut.bits <> demux.io.outA
+
         io.Requestor.Request <> demux.io.outB // I think we should also send this to the control unit to store metadata
 
 

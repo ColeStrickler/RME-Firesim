@@ -106,11 +106,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      val ConfigPort = LazyModule(new ConfigurationPortRME(params, device))
-      val trapper = LazyModule(new TrapperRME(params, in_edge, in))
-      val requestor = LazyModule(new RequestorRME(params, in_edge, out_edge, out))
-      val fetch_unit = LazyModule(new FetchUnitRME(params, out_edge, out, in_edge))
-      val control_unit = LazyModule(new ControlUnitRME(params, out_edge, out))
+      val ConfigPort = LazyModule(new ConfigurationPortRME(params, device, i))
+      val trapper = LazyModule(new TrapperRME(params, in_edge, in, i))
+      val requestor = LazyModule(new RequestorRME(params, in_edge, out_edge, out, i))
+      val fetch_unit = LazyModule(new FetchUnitRME(params, out_edge, out, in_edge, i))
+      val control_unit = LazyModule(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       
 
@@ -124,9 +124,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      fetch_unit.io.inReply.bits := replyFromDRAMDemux.io.outB.bits
-      fetch_unit.io.inReply.valid := replyFromDRAMDemux.io.outB.valid
-      replyFromDRAMDemux.io.outB.ready := fetch_unit.io.inReply.ready
+      fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
       
       //fetch_unit.io.inReply.bits.corrupt := replyFromDRAMDemux.io.outB.bits.corrupt
 

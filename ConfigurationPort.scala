@@ -14,21 +14,21 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 case class RMEConfigPortIO() extends Bundle
 {
-    val RowSize = UInt(32.W) // size of each row in database
-    val RowCount = UInt(32.W) // count of each row in database
-    val EnabledColumnCount = UInt(4.W) // total number of enabled columns
-    val ColumnWidths = UInt(7.W) // width of ith enabled column
-    val ColumnOffsets = Vec(15, UInt(6.W)) // offset off column j from column j-1
-    val FrameOffset = UInt(32.W)
+    val RowSize = Output(UInt(32.W)) // size of each row in database
+    val RowCount = Output(UInt(32.W)) // count of each row in database
+    val EnabledColumnCount = Output(UInt(4.W)) // total number of enabled columns
+    val ColumnWidths = Output(UInt(7.W)) // width of ith enabled column
+    val ColumnOffsets = Output(Vec(15, UInt(6.W))) // offset off column j from column j-1
+    val FrameOffset = Output(UInt(32.W))
 }
 
 
 
-class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p: Parameters) extends LazyModule 
+class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device, instance: Int)(implicit p: Parameters) extends LazyModule 
 {
     val io = IO(new Bundle {
-        val config = Output(RMEConfigPortIO())
-    })
+        val config = RMEConfigPortIO()
+    }).suggestName(s"cfgio_$instance")
 
     val ctlnode = TLRegisterNode(
         address     = Seq(AddressSet(params.controlMMIOAddress, 0xfff)),
@@ -45,7 +45,7 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
         val r_ColumnWidths = RegInit(0.U(6.W))
-        val r_ColumnOffsets = Seq.fill(15)(RegInit(0.U(6.W)))
+        val r_ColumnOffsets = RegInit(VecInit(Seq.fill(15)(0.U(6.W))))
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
 
@@ -89,10 +89,8 @@ class ConfigurationPortRME(params: RelMemParams, RMEDevice : Device)(implicit p:
         io.config.EnabledColumnCount := r_EnabledColumnCount
         io.config.FrameOffset := r_FrameOffset
         io.config.ColumnWidths := r_ColumnWidths
-        for (i <- 0 until 15)
-        {
-             io.config.ColumnOffsets(i) := r_ColumnOffsets(i)
-        }
+        io.config.ColumnOffsets := r_ColumnOffsets
+        
     }
 
 }

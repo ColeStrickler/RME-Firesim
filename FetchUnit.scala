@@ -29,7 +29,7 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
     
 */
 
-class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, tlInEdge: TLEdge)(
+class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, tlInEdge: TLEdge, instance: Int)(
     implicit p: Parameters) extends LazyModule {
 
     val tlOutParams = tlOutEdge.bundle
@@ -43,8 +43,8 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         */
 
         // DRAM Port
-        val OutReq = Decoupled(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
-        val inReply = Flipped(DecoupledIO(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
+        val OutReq = Flipped(Decoupled(new TLBundleA(tlOutParams))) // send outbound memory requests to DRAM
+        val inReply = DecoupledIO(new TLBundleD(tlOutParams)) // receive inbound data from DRAM
         val SrcId = Valid(UInt(tlOutParams.sourceBits.W)) // use to route incoming requests back to here
 
         
@@ -54,7 +54,7 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
 
         // Trapper port --> don't think we need this
         //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
-    })
+    }).suggestName(s"fetchunitio_$instance")
     
 
     

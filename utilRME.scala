@@ -36,7 +36,9 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
   dummyMessage.size := 0.U
   dummyMessage.source := 0.U
   dummyMessage.data := 0.U
-
+  dummyMessage.denied := 0.U
+  dummyMessage.sink := 0.U
+  dummyMessage.corrupt := false.B
 
 
   // Route input based on selector

@@ -30,7 +30,7 @@ case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle
 
 
 
-class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle)(
+class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends LazyModule {
 
     val tlParams = tlOutEdge.bundle
@@ -40,7 +40,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         // Fetch Unit Port
-        val FetchUnitPort = DecoupledIO(Flipped(FetchUnitControlPort(tlOutEdge.bundle)))
+        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlOutEdge.bundle)))
 
 
         // Trapper Port
@@ -51,7 +51,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         // Requestor Port
         val RequestorPort = ControlUnitRequestorPort()
 
-    })
+    }).suggestName(s"ctrlrio_$instance")
     
     /*
         We need to orchestrate the following:
