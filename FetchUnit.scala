@@ -149,7 +149,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.data := dataReg
 
         // we no longer have an active request when we send it to control unit
-        hasActiveRequest := Mux(io.FetchReq.fire, true.B, !io.ControlUnit.fire)
+        hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.FetchReq.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
         io.SrcId.bits := currentRequest.source
         io.SrcId.valid := hasActiveRequest
 }

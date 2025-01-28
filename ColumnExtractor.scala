@@ -56,7 +56,10 @@ class ColumnExtractor extends Module {
         To test in the begginning we are just going to take the first 4 bytes from each line
     */
     tmpWire := tmpLine
-    
+    when (io.CacheLineIn.fire)
+    {
+        SynthesizePrintf("[ColumnExtractor] --> received cache line in\n")
+    }
 
 
     io.CacheLineIn.ready := !hasValidLine

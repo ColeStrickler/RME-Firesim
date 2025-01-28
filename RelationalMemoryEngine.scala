@@ -93,38 +93,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
       //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
       val ConfigPort = LazyModule(new ConfigurationPortRME(params, device, i))
       val trapper = Module(new TrapperRME(params, in_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
       val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i))
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
-      
-      when (in.a.valid)
-      {
-        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
-        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
-        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
-      }
 
-
-      when (in.d.valid)
+      when (in.d.fire)
       {
-        SynthesizePrintf("in.d.valid\n")
+        SynthesizePrintf("in.d.firen")
       }
       /*
         Input and output of RME
@@ -154,7 +132,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       when (out.a.fire)
       {
-        SynthesizePrintf("out.a.address 0x%x\n", out.a.bits.address)
+        SynthesizePrintf("out.a.fire out.a.address 0x%x\n", out.a.bits.address)
       }
 
 
