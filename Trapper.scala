@@ -24,18 +24,17 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle, instance: Int)(
-    implicit p: Parameters) extends LazyModule {
+    implicit p: Parameters) extends Module {
     val tlInParams = tlInEdge.bundle
-    val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
+   // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
     val io = IO(new Bundle {
         val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
-        val TLInD = Flipped(DecoupledIO(new TLBundleD(tlInParams)))
-        val TLPassThroughOut = Flipped(DecoupledIO(new TLBundleA(tlInParams))).suggestName("trapperio")
+        val TLInD = DecoupledIO(new TLBundleD(tlInParams))
         
 
 
 
-        val Requestor = RequestorTrapperPort(tlInParams)
+        val Requestor = new RequestorTrapperPort(tlInParams)
         val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
 
     }).suggestName(s"trapper_$instance")
@@ -51,16 +50,22 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
 
 
     */
+    when (io.TLInA.fire)
+    {
+        SynthesizePrintf("[TRAPPER] ==> request in 0x%x\n", io.TLInA.bits.address)
+    }
 
-    lazy val module = new Impl
-    class Impl extends LazyModuleImp(this) {
-        val isRMERequest = ToRME(io.TLInA.bits.address)
-        val demux = Module(new ConditionalDemuxA(tlInParams))
-        demux.io.dataIn <> io.TLInA
-        demux.io.sel := isRMERequest
-        io.TLPassThroughOut.bits <> demux.io.outA
+    when (io.TLInD.fire)
+    {
+        SynthesizePrintf("[TRAPPER] ==> sent reply with data: 0x%x\n", io.TLInD.bits.data)
+    }
+        // io.Requestor.Request.ready %d, io.Requestor.Request.valid %d\n", io.Requestor.Request.ready, io.Requestor.Request.valid)
+        //SynthesizePrintf("[TRAPPER] ==> io.TLInD.ready %d, io.TLInD.valid %d\n", io.TLInD.ready, io.TLInD.valid)
+    
 
-        io.Requestor.Request <> demux.io.outB // I think we should also send this to the control unit to store metadata
+
+
+        io.Requestor.Request <> io.TLInA // I think we should also send this to the control unit to store metadata
 
 
         //rme_in_queue.io.enq <> demux.io.outB
@@ -74,15 +79,13 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
         */
 
         // Handle reply logic
-        val rme_reply_queue = Module(new Queue(new TLBundleD(tlInParams), 16, flow=false))
+       // val rme_reply_queue = Module(new Queue(new TLBundleD(tlInParams), 16, flow=false))
         val replyCacheLine = RegInit(0.U(512.W))
-        val replyToBaseReq = RegInit(new TLBundleA(tlInParams))
+        val replyToBaseReq = Reg(new TLBundleA(tlInParams))
 
         val DataWidth = tlInParams.dataBits
 
-        replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, replyCacheLine)
-        replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
-        io.ControlUnit.ready := !currentlyBeating
+        
         
 
 
@@ -97,9 +100,13 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
         currentDataWire := (replyCacheLine >> (DataWidth.U*beatCount))(DataWidth-1, 0) // get data
         
 
+        replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, replyCacheLine)
+        replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
+        io.ControlUnit.ready := !currentlyBeating
+
 
         currentlyBeating := Mux(currentlyBeating, !d_last, io.ControlUnit.fire)
-        rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
+       // rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
 
 
 
@@ -118,7 +125,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
 
 
 
-    }
+    
 
 
 

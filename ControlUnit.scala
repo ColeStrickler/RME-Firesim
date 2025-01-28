@@ -31,7 +31,7 @@ case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle
 
 
 class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
-    implicit p: Parameters) extends LazyModule {
+    implicit p: Parameters) extends Module {
 
     val tlParams = tlOutEdge.bundle
     val io = IO(new Bundle{
@@ -66,13 +66,16 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     */
 
 
-    lazy val module = new Impl
-    class Impl extends LazyModuleImp(this) {
-
         //val spm = Module(new ScratchPadRME(params))
         
+        //SynthesizePrintf("[CONTROL UNIT] ==> io.FetchUnitPort.ready %d, io.FetchUnitPort.valid %d\n", io.FetchUnitPort.ready, io.FetchUnitPort.valid)
+        //SynthesizePrintf("[CONTROL UNIT] ==> io.TrapperPort.ready %d, io.TrapperPort.valid %d\n", io.TrapperPort.ready, io.TrapperPort.valid)
         
         
+        when (io.FetchUnitPort.fire)
+        {
+            SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x\n", io.FetchUnitPort.bits.baseReq.address)
+        }
         val BaseReq = Reg(new TLBundleA(tlParams))
         val ColExtractor = Module(new ColumnExtractor)
         val packer = Module(new PackerRME)
@@ -113,6 +116,6 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
         //io.FetchUnitPort.bits.data
 
-    }
+    
 
 }

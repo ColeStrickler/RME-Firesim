@@ -54,32 +54,32 @@ class PackerRME extends Module {
         {
             is (1.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(512, 16))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(511, 16))
                 NumPackedBytes := NumPackedBytes + 1.U
             }
             is (2.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(512, 16))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(15, 0), (packedLine >> (dataInSizeBits))(511, 16))
                 NumPackedBytes := NumPackedBytes + 2.U
             }
             is(4.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(31, 0), (packedLine >> (dataInSizeBits))(512, 32))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(31, 0), (packedLine >> (dataInSizeBits))(511, 32))
                 NumPackedBytes := NumPackedBytes + 4.U
             }
             is (8.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(63, 0), (packedLine >> (dataInSizeBits))(512, 64))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(63, 0), (packedLine >> (dataInSizeBits))(511, 64))
                 NumPackedBytes := NumPackedBytes + 8.U
             }
             is (16.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(127, 0), (packedLine >> (dataInSizeBits))(512, 128))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(127, 0), (packedLine >> (dataInSizeBits))(511, 128))
                 NumPackedBytes := NumPackedBytes + 16.U
             }
             is (32.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(255, 0), (packedLine >> (dataInSizeBits))(512, 256))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(255, 0), (packedLine >> (dataInSizeBits))(511, 256))
                 NumPackedBytes := NumPackedBytes + 32.U
             }
             is (64.U)

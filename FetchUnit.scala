@@ -29,53 +29,69 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
     
 */
 
-class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, tlInEdge: TLEdge, instance: Int)(
-    implicit p: Parameters) extends LazyModule {
+class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int)(
+    implicit p: Parameters) extends Module {
 
+    val (out, tlOutEdge) = adapter.out(instance)
+    val tlOutA = out.a
+    val tlOutD = out.d
     val tlOutParams = tlOutEdge.bundle
-    val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
     val io = IO(new Bundle {
         // Requestor Port
-        val Requestor = Flipped(RequestorFetchUnitPort(tlOutParams)) // Receive address to request from the Requestor Module]
+        //val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle))) // Receive address to request from the Requestor Module]
+        val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
+        val isBaseRequest = Flipped(Output(Bool()))
+        //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
+        //val Requestor_FetchReq = Flipped(Decoupled(new TLBundleA(tlInEdge.bundle)))
+
+
         /*
             We will probable want to tag this A channel request on as metadata so we can easily form
             D channel replies to cache
         */
 
         // DRAM Port
-        val OutReq = Flipped(Decoupled(new TLBundleA(tlOutParams))) // send outbound memory requests to DRAM
-        val inReply = DecoupledIO(new TLBundleD(tlOutParams)) // receive inbound data from DRAM
+        val OutReq = Decoupled(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
+        val inReply = Flipped(Decoupled(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
         val SrcId = Valid(UInt(tlOutParams.sourceBits.W)) // use to route incoming requests back to here
-
+        
         
         // Control Unit Port
-        val ControlUnit = DecoupledIO(FetchUnitControlPort(tlOutParams))
+        val ControlUnit = Decoupled(FetchUnitControlPort(tlOutParams))
 
 
         // Trapper port --> don't think we need this
         //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
     }).suggestName(s"fetchunitio_$instance")
-    
-
-    
-
+    println("FETCH UNIT\n\n\n")
+    println("FETCH UNIT\n\n\n")
+    println("FETCH UNIT\n\n\n")
+    //println(io.Requestor.bits.)
+    //println(io.Requestor.toString())
+    //println(io.Requestor.toString())
+    println("FETCH UNIT\n\n\n")
+    println("FETCH UNIT\n\n\n")
+    println("FETCH UNIT\n\n\n")
 
     /*
         Let's start by being able to manage 1 request at a time which will entail
         taking in a base address and communicating the with Requestor to get the Request Addresses
-
     */
 
-    lazy val module = new Impl
-    class Impl extends LazyModuleImp(this) {
+    val baseReq = Reg(new TLBundleA(tlOutParams))
+        baseReq := Mux(io.isBaseRequest && io.FetchReq.fire, io.FetchReq.bits, baseReq)
+        when(io.OutReq.fire)
+        {
+            SynthesizePrintf("[FetchUnit] ==> fired request to DRAM\n")
+        }
 
+        when (io.inReply.fire)
+        {
+            SynthesizePrintf("[FetchUnit] ==> received reply DRAM\n")
+        }
 
-
-        val baseReq = RegInit(new TLBundleA(tlOutParams))
-        baseReq := Mux(io.Requestor.isBaseRequest && io.Requestor.FetchReq.fire, io.Requestor.FetchReq.bits, baseReq)
-
-
-
+        //SynthesizePrintf("[FetchUnit] ==> io.OutReq.ready %d, io.OutReq.valid %d\n", io.OutReq.ready, io.OutReq.valid)
+        //SynthesizePrintf("[FetchUnit] ==> io.inReply.ready %d, io.inReply.valid %d\n", io.inReply.ready, io.inReply.valid)
         /*
             [ DRAM OUTBOUND ]
             Handle outbound requests to DRAM
@@ -86,12 +102,12 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
         val currentRequest = Reg(new TLBundleA(tlOutParams))
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
         val currentBaseAddr = RegInit(0.U(64.W))
-        val (a_first, a_last, a_done) = tlOutEdge.firstlast(tlOutBundle.a)
-        currentlyBeating := Mux(currentlyBeating, !a_last, io.Requestor.FetchReq.fire)
-        currentRequest := Mux(io.Requestor.FetchReq.fire, io.Requestor.FetchReq.bits, currentRequest)
+        val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
+        currentlyBeating := Mux(currentlyBeating, !a_last, io.FetchReq.fire)
+        currentRequest := Mux(io.FetchReq.fire, io.FetchReq.bits, currentRequest)
         beatingRequest.bits := currentRequest
         beatingRequest.valid := currentlyBeating
-        io.Requestor.FetchReq.ready := !currentlyBeating && !hasActiveRequest
+        io.FetchReq.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
 
@@ -100,7 +116,13 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
             [ DRAM INBOUND ]
             Handle Inbound replies from DRAM
         */
-        val (d_first, d_last, d_done) = tlOutEdge.firstlast(tlOutBundle.d)
+        val (d_first, d_last, d_done, d_count) = tlOutEdge.firstlast2(io.inReply)
+
+
+
+
+        println("io.inReply.bits.data.getWidth %d\n", io.inReply.bits.data.getWidth)
+        
         //val dataRegWriteIndex = RegInit(0.U(log2Ceil(64).W)) //  index for each byte
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
         val dataRegFull = RegInit(false.B)
@@ -120,14 +142,14 @@ class FetchUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundl
                 else
                     dataReg is not full and we stay false
         */
-        dataRegFull := Mux(d_last, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
+        //SynthesizePrintf("TLBundleD inReply d_first %d, d_last %d, d_done %d, d_count %d, numbeats %d\n", d_first, d_last, d_done, d_count, tlOutEdge.numBeats1(io.inReply.bits))
+        dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
         io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
 
         // we no longer have an active request when we send it to control unit
-        hasActiveRequest := Mux(io.Requestor.FetchReq.fire, true.B, !io.ControlUnit.fire)
+        hasActiveRequest := Mux(io.FetchReq.fire, true.B, !io.ControlUnit.fire)
         io.SrcId.bits := currentRequest.source
         io.SrcId.valid := hasActiveRequest
-    }
 }

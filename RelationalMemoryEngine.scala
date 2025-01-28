@@ -16,6 +16,7 @@ import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
 import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
+import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 
@@ -107,17 +108,35 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       val ConfigPort = LazyModule(new ConfigurationPortRME(params, device, i))
-      val trapper = LazyModule(new TrapperRME(params, in_edge, in, i))
-      val requestor = LazyModule(new RequestorRME(params, in_edge, out_edge, out, i))
-      val fetch_unit = LazyModule(new FetchUnitRME(params, out_edge, out, in_edge, i))
-      val control_unit = LazyModule(new ControlUnitRME(params, out_edge, out, i))
+      val trapper = Module(new TrapperRME(params, in_edge, in, i))
+      val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
+      val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i))
+      val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       
+      when (in.a.valid)
+      {
+        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
+        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
+        SynthesizePrintf("in.a.valid 1, trapper.io.TLInA.ready %d\n", trapper.io.TLInA.ready)
+      }
 
+
+      when (in.d.valid)
+      {
+        SynthesizePrintf("in.d.valid\n")
+      }
       /*
         Input and output of RME
       */
-      trapper.io.TLInA <> in.a
+      val isRMERequest = ToRME(in.a.bits.address)
+      val demux = Module(new ConditionalDemuxA(in_edge.bundle))
+      demux.io.dataIn <> in.a
+      demux.io.sel := isRMERequest
+      trapper.io.TLInA <> demux.io.outB
+      
+      
+
       replyFromDRAMDemux.io.dataIn <> out.d
 
 
@@ -129,29 +148,58 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //fetch_unit.io.inReply.bits.corrupt := replyFromDRAMDemux.io.outB.bits.corrupt
 
       // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
-      replyFromDRAMDemux.io.sel := fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source)
+      val replySelector = fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source)
+      replyFromDRAMDemux.io.sel := replySelector
+     // SynthesizePrintf("out.d.fire %d, replyFromDRAMDemux.io.sel %d\n", out.d.fire, fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source))
+
+      when (out.a.fire)
+      {
+        SynthesizePrintf("out.a.address 0x%x\n", out.a.bits.address)
+      }
+
+
       // Either from trapper or directly from DRAM if not an rme request
       TLArbiter.robin(in_edge, in.d, trapper.io.TLInD, replyFromDRAMDemux.io.outA)
 
       // Outgoing arbiter for passthrough and RME requests
-      TLArbiter.robin(out_edge, out.a, trapper.io.TLPassThroughOut, fetch_unit.io.OutReq)
-
+      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_unit.io.OutReq)
+      
 
 
       /*
         Connections between RME modules
       */
 
-      requestor.io.Trapper <> trapper.io.Requestor
+      requestor.io.Trapper.Request.bits := trapper.io.Requestor.Request.bits
+      requestor.io.Trapper.Request.valid := trapper.io.Requestor.Request.valid
+      trapper.io.Requestor.Request.ready := requestor.io.Trapper.Request.ready
+
+
       trapper.io.ControlUnit <> control_unit.io.TrapperPort
-      fetch_unit.io.Requestor <> requestor.io.FetchUnit
-      control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
-      
+
+      requestor.io.Config := ConfigPort.io.config
 
 
 
+      fetch_unit.io.FetchReq.valid := requestor.io.FetchReq.valid
+      requestor.io.FetchReq.ready := fetch_unit.io.FetchReq.ready
+      fetch_unit.io.FetchReq.bits := requestor.io.FetchReq.bits
+       fetch_unit.io.isBaseRequest := requestor.io.isBaseRequest
+
+      //fetch_unit.io.Requestor.valid := requestor.io.FetchUnit.valid
+      //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
 
 
+
+      control_unit.io.FetchUnitPort.bits := fetch_unit.io.ControlUnit.bits
+      control_unit.io.FetchUnitPort.valid := fetch_unit.io.ControlUnit.valid
+      fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready
+
+
+      //val (d_first, d_last, d_done) = out_edge.firstlast(out.d)
+      //fetch_unit.io.d_first :=  Mux(out.d.fire & replySelector, d_first, false.B)
+      //fetch_unit.io.d_last :=   Mux(out.d.fire & replySelector,  d_last, false.B)
+      //fetch_unit.io.d_done :=   Mux(out.d.fire & replySelector,  d_done, false.B)
 
 
       //rme_in_queue.io.enq <> in.a // everything passes through queue
