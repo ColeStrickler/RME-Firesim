@@ -19,27 +19,24 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
 import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
-
 case class RelMemParams (
-    regaddress: Int,
-    rmeaddress: BigInt,
-    rmeAddressSize: BigInt,
-    mbus : MemoryBus,
-    controlMMIOAddress : Int,
-    controlBeatBytes : Int,
+    regaddress: Int = 0x3000000,
+    rmeaddress: BigInt = 0x110000000L,
+    rmeAddressSize: BigInt = 0xfffffff,
+    controlBeatBytes : Int = 8,
     DataSPMSize : Int = 1024,
     MetadataSPMSize : Int = 1024,
 )
 
 
 
-
+case object RMEKey extends Field[Option[RelMemParams]](None)
 
 
 class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 {
 
-    val addr = Seq(AddressSet(params.rmeaddress, 0xfff))
+    val addr = Seq(AddressSet(params.rmeaddress, params.rmeAddressSize))
     
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
 
@@ -59,15 +56,20 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
     def ToRME(addr : UInt) : Bool = {
-        val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + 0xfff.U)
+        val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + ((params.rmeAddressSize + 1)/2).U)
         torme
     }
 
     def UnmaskedAddress(addr: UInt) : UInt = {
-        val unmaskedAddr = addr & ~params.rmeaddress.U
+        val unmaskedAddr = addr + ((params.rmeAddressSize + 1)/2).U
         unmaskedAddr
     }
 
+    val ctlnode = TLRegisterNode(
+        address     = Seq(AddressSet(params.regaddress, 0xfff)),
+        device      = device,
+        concurrency = 1, // Only one flush at a time (else need to track who answers)
+        beatBytes   = params.controlBeatBytes)
      
   println("\n\n\n\nUsing relational memory engine\n\n\n\n")
   lazy val module = new Impl
@@ -79,6 +81,80 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     for (i <- 0 until nClients)
     {
+      val config = Wire(RMEConfigPortIO())
+     // Registers
+        val r_RowSize = RegInit(0.U(32.W))
+        val r_RowCount = RegInit(0.U(32.W))
+        val r_EnabledColumnCount = RegInit(0.U(4.W))
+        val r_ColumnWidths = RegInit(0.U(6.W))
+        val r_ColumnOffsets = RegInit(VecInit(Seq.fill(15)(0.U(7.W))))
+        val r_FrameOffset = RegInit(0.U(32.W))
+        val r_Reset = RegInit(false.B)
+        val r_EnableRME = RegInit(false.B)
+
+    /*
+            Register next state assignment
+        */
+        when (r_Reset) // Synchronous High Reset
+        {
+            // r_Reset := false.B --> we will make software toggle the reset
+            r_EnableRME := false.B
+            r_RowSize := 0.U
+            r_RowCount := 0.U
+            r_EnabledColumnCount := 0.U
+            r_FrameOffset := 0.U
+            r_ColumnWidths := 0.U
+            for (i <- 0 until 15)
+            { 
+                r_ColumnOffsets(i) := 0.U
+            }
+        }
+
+
+
+        // Assign IO
+
+        config.RowSize := r_RowSize
+        config.RowCount := r_RowCount
+        config.EnabledColumnCount := r_EnabledColumnCount
+        config.FrameOffset := r_FrameOffset
+        config.ColumnWidths := r_ColumnWidths
+        config.Enabled := r_EnableRME
+
+        for (i <- 0 until r_ColumnOffsets.length)
+        {
+            config.ColumnOffsets(i) := r_ColumnOffsets(i)
+        }
+
+        //when (r_EnableRME)
+        //{
+        //    SynthesizePrintf("RME Enabled\n")
+        //}
+        
+
+
+      println("MAPPING RME CONTROL REGISTERS")
+      // MMIO Register Mapping
+      val mmio_Enable = Seq((0x00) -> Seq(RegField(r_EnableRME.getWidth, r_EnableRME, RegFieldDesc("enableRME", "enableRME"))))
+      val mmio_RowSize = Seq((0x10) -> Seq(RegField(r_RowSize.getWidth, r_RowSize, RegFieldDesc("RowSize", "RowSizeRME"))))
+      val mmio_RowCount = Seq((0x20) -> Seq(RegField(r_RowCount.getWidth, r_RowCount, RegFieldDesc("RowCount", "RowCountRME"))))
+      val mmio_EnabledColumnCount = Seq((0x30) -> Seq(RegField(r_EnabledColumnCount.getWidth, r_EnabledColumnCount, RegFieldDesc("EnabledColumnCount", "EnabledColumnCountRME"))))
+      val mmio_ColumnWidth = Seq((0x40) -> Seq(RegField(r_ColumnWidths.getWidth, r_ColumnWidths, RegFieldDesc(s"ColumnWidth", "ColumnWidth"))))
+      val mmio_ColumnOffsets = r_ColumnOffsets.zipWithIndex.map {case (reg, i) => 
+          (i * 0x10 + 0x48) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnOffset${i}", "ColumnOffset")))    
+      }
+      val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
+      val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
+      val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
+                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
+      val regmap = ctlnode.regmap(mmreg: _*)
+
+
+
+
+
+
+
       val (out, out_edge) = node.out(i)
       val (in, in_edge) = node.in(i)
       val outParams = out_edge.bundle
@@ -93,34 +169,29 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
       //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
 
-      val ConfigPort = LazyModule(new ConfigurationPortRME(params, device, i))
-      val trapper = Module(new TrapperRME(params, in_edge, in, i))
+      //val ConfigPort = new ConfigurationPortRME(params, device, i)
+      val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
       val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i))
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
-
-      when (in.d.fire)
-      {
-        SynthesizePrintf("in.d.firen")
-      }
+      //when (in.d.fire)
+      //{
+      //  SynthesizePrintf("in.d.fire\n")
+      //}
       /*
         Input and output of RME
       */
-      val isRMERequest = ToRME(in.a.bits.address)
+      val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
       val demux = Module(new ConditionalDemuxA(in_edge.bundle))
       demux.io.dataIn <> in.a
       demux.io.sel := isRMERequest
       trapper.io.TLInA <> demux.io.outB
+      //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       
       
 
       replyFromDRAMDemux.io.dataIn <> out.d
-
-
-
-
-
       fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
       
       //fetch_unit.io.inReply.bits.corrupt := replyFromDRAMDemux.io.outB.bits.corrupt
@@ -130,10 +201,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       replyFromDRAMDemux.io.sel := replySelector
      // SynthesizePrintf("out.d.fire %d, replyFromDRAMDemux.io.sel %d\n", out.d.fire, fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source))
 
-      when (out.a.fire)
-      {
-        SynthesizePrintf("out.a.fire out.a.address 0x%x\n", out.a.bits.address)
-      }
+      //when (out.a.fire)
+      //{
+      //  //SynthesizePrintf("out.a.fire out.a.address 0x%x\n", out.a.bits.address)
+      //}
 
 
       // Either from trapper or directly from DRAM if not an rme request
@@ -155,7 +226,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       trapper.io.ControlUnit <> control_unit.io.TrapperPort
 
-      requestor.io.Config := ConfigPort.io.config
+      requestor.io.Config := config
 
 
 
@@ -174,113 +245,6 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready
 
 
-      //val (d_first, d_last, d_done) = out_edge.firstlast(out.d)
-      //fetch_unit.io.d_first :=  Mux(out.d.fire & replySelector, d_first, false.B)
-      //fetch_unit.io.d_last :=   Mux(out.d.fire & replySelector,  d_last, false.B)
-      //fetch_unit.io.d_done :=   Mux(out.d.fire & replySelector,  d_done, false.B)
-
-
-      //rme_in_queue.io.enq <> in.a // everything passes through queue
-      //// defaults
-      //rme_in_queue.io.enq.valid := false.B
-      //rme_in_queue.io.enq.bits := in.a.bits
-      //when (in.a.fire)
-      //{
-      //  // When in the rme address range we pass here
-      //  // handle requests in
-      //  SynthesizePrintf("in.a.fire: 0x%x\n", in.a.bits.address)
-      //  //rme_in_queue.io.enq <> in.a  
-      //}
-
-
-      //when (rme_in_queue.io.deq.valid)
-      //{
-      //  SynthesizePrintf("rme_in_queue.io.deq.valid = 1\n")
-      //  SynthesizePrintf("rme_reply_queue.io.enq.ready = %d\n", rme_reply_queue.io.enq.ready)
-      //  SynthesizePrintf("rme_in_queue.io.deq.bits.address 0x%x\n", rme_in_queue.io.deq.bits.address)
-      //}
-
-
-      //val currentRequest = Wire(Decoupled(new TLBundleD(inParams)))
-      //val (d_first, d_last, d_done) = in_edge.firstlast(currentRequest)
-      //val currentlyBeating = RegInit(false.B)
-      //val toSend = Reg(new TLBundleD(inParams))
-      //currentlyBeating := Mux(currentlyBeating, !d_last, rme_reply_queue.io.deq.fire)
-      //rme_reply_queue.io.deq.ready := !currentlyBeating
-      //when (rme_reply_queue.io.deq.fire)
-      //{
-      //  toSend <> rme_reply_queue.io.deq.bits
-      //}
-      //currentRequest.bits <> toSend
-      //currentRequest.valid := currentlyBeating
-      ////currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
-      //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
-      //rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
-      //val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
-      //println("dReply.size: %d\n", dReply.size)
-      //rme_reply_queue.io.enq.bits := dReply
-      //when (ToRME(in.a.bits.address))
-      //{
-      //  SynthesizePrintf("Setting selector to RME\n")
-      //}
-      //val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get)
-      //demux.io.dataIn <> in.a
-      //demux.io.sel := isRMERequest
-      //out.a <> demux.io.outA
-      //rme_in_queue.io.enq <> demux.io.outB
-      //when (demux.io.outB.valid)
-      //{
-      //  SynthesizePrintf("demux.io.outB.valid: %d\n", demux.io.outB.valid)
-      //  SynthesizePrintf("rme_in_queue.io.ready %d\n", rme_in_queue.io.enq.ready)
-      //}
-      //when (!rme_in_queue.io.enq.ready)
-      //{
-      //  SynthesizePrintf("!rme_in_queue.io.enq.valid --> CHECK\n")
-      //}
-      //when (ToRME(in.a.bits.address) && (in.a.bits.opcode =/= TLMessages.Get))
-      //{
-      //    SynthesizePrintf("Received non-Get request to RME 0x%x\n", in.a.bits.opcode)
-      //}
-      
-      //when (ToRME(out.a.bits.address) && out.a.fire)
-      //{
-      //  // When in the rme address range we pass here
-      //  // handle requests in
-      //  SynthesizePrintf("BAD! out request should've went to RME %x\n", out.a.bits.address)
-      //  //rme_in_queue.io.enq <> in.a  
-      //}
-      //.otherwise
-      //{
-      //  
-      //}
-
-      //when (rme_reply_queue.io.deq.fire)
-      //{   
-      //  SynthesizePrintf("Firing request out of reply queue\n")
-      //  SynthesizePrintf("d_first %d, d_last %d, d_done %d\n", d_first, d_last, d_done)
-      //}
-      //when (rme_reply_queue.io.count > 0.U)
-      //{
-      //  SynthesizePrintf("RME Got reply queue entry %d\n", rme_reply_queue.io.count)
-      //}
-      //when (rme_in_queue.io.count > 0.U)
-      //{
-      //  SynthesizePrintf("RME Got in queue entry %d\n", rme_in_queue.io.count)
-      //}
-
-      
-
-     
-
-      
-
-      
-
-
-
-      // back to cache arbiter
-      // previously was taking directly from the reply queue before trying to implement beats
-      //TLArbiter.robin(in_edge, in.d, out.d, currentRequest)
 
 
       
@@ -330,7 +294,24 @@ trait HasReservedAddressRange extends SimpleDevice {
   hasReservedRange = true
 }
 
-trait HasRMEAttachable extends BaseSubsystem {
+
+class WithRME() extends Config((site, here, up) => {
+  case RMEKey => Some(RelMemParams())
+})
+
+trait CanHavePeripheryRME { this: BaseSubsystem =>
+  private val portName = "dram-bru"
+  val pbus = locateTLBusWrapper(PBUS)
   val mbus = locateTLBusWrapper(MBUS)
-//  mbus.coupleTo("rme-manager") {mbus.rme.get.manager := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _ }
+
+  val rme = p(RMEKey) match {
+    case Some(params) => {
+      pbus.coupleTo(portName) {
+        mbus.rme.get.ctlnode := 
+        TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
+
+      mbus.rme.get
+    }
+    case None => None
+  }
 }

@@ -42,11 +42,17 @@ class PackerRME extends Module {
     val ready = io.ColExtractor.valid && dataInBounds
     io.ColExtractor.ready := ready
 
+    when (io.ColExtractor.fire)
+    {
+        SynthesizePrintf("[PACKER] --> received extracted column 0x%x\n", io.ColExtractor.bits.dataIn)
+    }
+
     /*
         We will need to handle cases when the data doesn't exactly add up to 64bytes eventually
     */
     when (newDataIn)
     {
+        SynthesizePrintf("[PACKER] --> current line 0x%x\n", packedLine)
         // valid data sizes
         assert(DataSize === 1.U || DataSize === 2.U || DataSize === 4.U || DataSize === 8.U ||
         DataSize === 16.U || DataSize === 32.U || DataSize === 64.U)

@@ -145,7 +145,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val singleRowEnColSize = (io.Config.ColumnWidths * io.Config.EnabledColumnCount)
                 val rowsNeeded = divideCeil(64.U, singleRowEnColSize)
                 val cacheLinesNeeded = divideCeil(rowsNeeded*io.Config.RowSize, 64.U(64.W))
-                TotalCacheLinesNeeded       := cacheLinesNeeded
+                TotalCacheLinesNeeded       := 4.U//cacheLinesNeeded
                 TotalCacheLinesSent         := 0.U
 
 

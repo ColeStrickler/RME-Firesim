@@ -116,7 +116,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
             [ DRAM INBOUND ]
             Handle Inbound replies from DRAM
         */
-        val (d_first, d_last, d_done, d_count) = tlOutEdge.firstlast2(io.inReply)
+        val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
 
 
 
@@ -131,8 +131,14 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data
-        dataReg := Mux(io.inReply.fire, Cat((dataReg << io.inReply.bits.data.getWidth), io.inReply.bits.data), dataReg)
-        
+        val dataWidth = io.inReply.bits.data.getWidth
+        val shiftNewData = io.inReply.bits.data + d_count // count is to test
+
+        dataReg := Mux(io.inReply.fire, Cat((dataReg << dataWidth), shiftNewData), dataReg)
+        when (io.inReply.fire)
+        {
+            SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
+        }
         /*
             if (done receiving data)
                 dataRegFull = true

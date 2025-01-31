@@ -23,7 +23,7 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 
-class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle, instance: Int)(
+class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut, tlInBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends Module {
     val tlInParams = tlInEdge.bundle
    // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
@@ -91,9 +91,8 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
 
         println("TLBundleD size bits %d\n", tlInParams.sizeBits)
         val dataChanSize = tlInEdge.size(tlInBundle.d.bits)
-        val currentRequest = Wire(new TLBundleD(tlInParams))
-        val (d_first, d_last, d_done) = tlInEdge.firstlast(io.TLInD)
-        val (_, _, _, beatCount) = tlInEdge.count(io.TLInD)
+        val currentRequest = Wire(Decoupled(new TLBundleD(tlInParams)))
+        val (d_first, d_last, d_done, beatCount, count) = tlInEdge.firstlast2(currentRequest)
         val currentlyBeating = RegInit(false.B)
         val toSend = Reg(new TLBundleD(tlInParams))
         val currentDataWire = WireInit(0.U(DataWidth.W))
@@ -105,16 +104,29 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
         io.ControlUnit.ready := !currentlyBeating
 
 
-        currentlyBeating := Mux(currentlyBeating, !d_last, io.ControlUnit.fire)
+        when (io.ControlUnit.fire)
+        {
+            SynthesizePrintf("[TRAPPER] --> cache line from control unit 0x%x\n", io.ControlUnit.bits.cacheLine)
+        }
+
+        currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)
        // rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
 
 
 
-        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, 0.U), toSend)
+        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(io.ControlUnit.bits.baseReq, currentDataWire), toSend)
 
-        currentRequest <> toSend
-        io.TLInD.valid := currentlyBeating
-        io.TLInD.bits <> currentRequest
+        currentRequest.bits := toSend
+        currentRequest.valid := currentlyBeating
+        
+
+        
+        io.TLInD <> currentRequest
+
+        when (currentlyBeating)
+        {
+            SynthesizePrintf("[TRAPPER] --> currentlyBeating. io.TLInD.ready %d, d_last %d, count %d\n", io.TLInD.ready, d_last, count)
+        }
 
       //currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
       //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
@@ -122,12 +134,4 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlInBundle: TLBundle,
       //val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
       //println("dReply.size: %d\n", dReply.size)  
       //rme_reply_queue.io.enq.bits := dReply
-
-
-
-    
-
-
-
-
 }

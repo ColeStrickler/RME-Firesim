@@ -74,7 +74,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         
         when (io.FetchUnitPort.fire)
         {
-            SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x\n", io.FetchUnitPort.bits.baseReq.address)
+            SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x, data: 0x%x\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.data)
         }
         val BaseReq = Reg(new TLBundleA(tlParams))
         val ColExtractor = Module(new ColumnExtractor)
