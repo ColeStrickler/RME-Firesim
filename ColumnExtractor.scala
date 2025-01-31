@@ -75,8 +75,8 @@ class ColumnExtractor extends Module {
     hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
     //io.DataSizeOut := 16.U
 
-
-    io.Packer.bits.dataIn := Cat(0.U((512-16).W),(tmpWire >> (currentOffset * 8.U))(15, 0))
+    // send in correct number bits to packer
+    io.Packer.bits.dataIn := Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
     io.Packer.bits.dataSize := 16.U
     io.Packer.valid := hasValidLine
 

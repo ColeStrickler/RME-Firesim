@@ -132,9 +132,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data
         val dataWidth = io.inReply.bits.data.getWidth
-        val shiftNewData = io.inReply.bits.data + d_count // count is to test
-
-        dataReg := Mux(io.inReply.fire, Cat((dataReg << dataWidth), shiftNewData), dataReg)
+        println(s"\n\nDATA WIDTH FETCH UNIT $dataWidth\n\n")
+        val shiftNewData = io.inReply.bits.data //+ d_count // count is to test
+        
+        // we have to splice the data after shift because zeroes are put in the top
+        dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)(511-dataWidth, 0)), dataReg)
         when (io.inReply.fire)
         {
             SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)

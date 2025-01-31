@@ -57,7 +57,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
     when (io.TLInD.fire)
     {
-        SynthesizePrintf("[TRAPPER] ==> sent reply with data: 0x%x\n", io.TLInD.bits.data)
+        SynthesizePrintf("[TRAPPER] ==> sent reply with data: 0x%x\n", currentDataWire)
     }
         // io.Requestor.Request.ready %d, io.Requestor.Request.valid %d\n", io.Requestor.Request.ready, io.Requestor.Request.valid)
         //SynthesizePrintf("[TRAPPER] ==> io.TLInD.ready %d, io.TLInD.valid %d\n", io.TLInD.ready, io.TLInD.valid)
@@ -96,10 +96,10 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         val currentlyBeating = RegInit(false.B)
         val toSend = Reg(new TLBundleD(tlInParams))
         val currentDataWire = WireInit(0.U(DataWidth.W))
-        currentDataWire := (replyCacheLine >> (DataWidth.U*beatCount))(DataWidth-1, 0) // get data
+        currentDataWire := replyCacheLine(DataWidth-1, 0) // get data
         
 
-        replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, replyCacheLine)
+        replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, Mux(io.TLInD.fire, replyCacheLine >> DataWidth, replyCacheLine))
         replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
         io.ControlUnit.ready := !currentlyBeating
 
