@@ -60,32 +60,32 @@ class PackerRME extends Module {
         {
             is (1.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-7), (packedLine >> (dataInSizeBits))(511, 8))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-7), (packedLine >> (dataInSizeBits))(511-8, 0))
                 NumPackedBytes := NumPackedBytes + 1.U
             }
             is (2.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-15), (packedLine >> (dataInSizeBits))(511, 16))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-15), (packedLine >> (dataInSizeBits))(511-16, 0))
                 NumPackedBytes := NumPackedBytes + 2.U
             }
             is(4.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-31), (packedLine >> (dataInSizeBits))(511, 32))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-31), (packedLine >> (dataInSizeBits))(511-32, 0))
                 NumPackedBytes := NumPackedBytes + 4.U
             }
             is (8.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-63), (packedLine >> (dataInSizeBits))(511, 64))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-63), (packedLine >> (dataInSizeBits))(511-64, 0))
                 NumPackedBytes := NumPackedBytes + 8.U
             }
             is (16.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511, 128))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
                 NumPackedBytes := NumPackedBytes + 16.U
             }
             is (32.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-255), (packedLine >> (dataInSizeBits))(511, 256))
+                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-255), (packedLine >> (dataInSizeBits))(511-256, 0))
                 NumPackedBytes := NumPackedBytes + 32.U
             }
             is (64.U)
