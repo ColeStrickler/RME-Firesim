@@ -82,12 +82,12 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         baseReq := Mux(io.isBaseRequest && io.FetchReq.fire, io.FetchReq.bits, baseReq)
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit] ==> fired request to DRAM\n")
+            SynthesizePrintf("[FetchUnit] ==> fired request to DRAM src: %d\n", io.OutReq.bits.source)
         }
 
         when (io.inReply.fire)
         {
-            SynthesizePrintf("[FetchUnit] ==> received reply DRAM\n")
+            //SynthesizePrintf("[FetchUnit] ==> received reply DRAM\n")
         }
 
         //SynthesizePrintf("[FetchUnit] ==> io.OutReq.ready %d, io.OutReq.valid %d\n", io.OutReq.ready, io.OutReq.valid)
@@ -97,20 +97,26 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
             Handle outbound requests to DRAM
         */
         // Store Current Request in a register to keep its state, pass beating request out in Wire
+        // we may not need to store this in a register here -->?
         val hasActiveRequest = RegInit(false.B)
         val currentlyBeating = RegInit(false.B)
         val currentRequest = Reg(new TLBundleA(tlOutParams))
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
         val currentBaseAddr = RegInit(0.U(64.W))
         val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
-        currentlyBeating := Mux(currentlyBeating, !a_last, io.FetchReq.fire)
+        currentlyBeating := Mux(currentlyBeating, !a_done, io.FetchReq.fire)
         currentRequest := Mux(io.FetchReq.fire, io.FetchReq.bits, currentRequest)
         beatingRequest.bits := currentRequest
         beatingRequest.valid := currentlyBeating
         io.FetchReq.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
+        
 
+        when (currentRequest.address ===  0x110a71300L.U)
+        {
+            SynthesizePrintf("addr 0x110a71300. %d, io.OutReq.ready %d\n", currentlyBeating, io.OutReq.ready)
+        }
 
         /*
             [ DRAM INBOUND ]
@@ -141,6 +147,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         {
             SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
         }
+
+        // freezing at [TRAPPER] ==> request in 0x110a71300
+
+
         /*
             if (done receiving data)
                 dataRegFull = true

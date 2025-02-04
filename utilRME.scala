@@ -43,12 +43,21 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
 
   // Route input based on selector
   when(io.sel) {
-    SynthesizePrintf("from DRAM back to RME\n")
+    when (io.dataIn.fire)
+    {
+      SynthesizePrintf("from DRAM back to RME src %d\n", io.dataIn.bits.source)
+    }
+    
     io.outB <> io.dataIn
     io.outA.bits := dummyMessage
     io.outA.valid := false.B
     readyOther := io.outA.ready
   }.otherwise {
+    when (io.dataIn.fire)
+    {
+      SynthesizePrintf("from DRAM skip RME src %d\n", io.dataIn.bits.source)
+    }
+    
     io.outA <> io.dataIn
     io.outB.bits := dummyMessage
     io.outB.valid := false.B
@@ -80,7 +89,7 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
 
   when (io.sel)
   {
-    SynthesizePrintf("Selector = 1\n")
+    //SynthesizePrintf("Selector = 1\n")
     
   }
 
