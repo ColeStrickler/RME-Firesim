@@ -29,7 +29,7 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
     
 */
 
-class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int)(
+class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int, subInstance: Int)(
     implicit p: Parameters) extends Module {
 
     val (out, tlOutEdge) = adapter.out(instance)
@@ -62,7 +62,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         // Trapper port --> don't think we need this
         //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
-    }).suggestName(s"fetchunitio_$instance")
+    }).suggestName(s"fetchunitio_$instance-$subInstance")
     println("FETCH UNIT\n\n\n")
     println("FETCH UNIT\n\n\n")
     println("FETCH UNIT\n\n\n")

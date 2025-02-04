@@ -50,9 +50,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
     }
     
+  val node = TLAdapterNode()
 
-    val node = TLAdapterNode()
-    
 
 
     def ToRME(addr : UInt) : Bool = {
@@ -163,7 +162,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       out.c <> in.c
       out.e <> in.e
       println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
-      println(s"in.d.numBeats ${in_edge.numBeats(in.d.bits)}\n")
+      println(s"source bits ${out.a.bits.source.getWidth}\n")
       //val inDBeats = in_edge.numBeats(in.d.bits)
       //val demux = Module(new ConditionalDemuxA(inParams))
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
@@ -172,7 +171,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
       val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
-      val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i))
+      val fetch_units = VecInit(Seq.tabulate(4) { j =>
+        Module(new FetchUnitRME(params, node, in_edge, i, j)).io
+      })
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       //when (in.d.fire)
@@ -189,29 +190,41 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       trapper.io.TLInA <> demux.io.outB
       //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       
-      
+
 
       replyFromDRAMDemux.io.dataIn <> out.d
-      fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
+      //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
       
-      //fetch_unit.io.inReply.bits.corrupt := replyFromDRAMDemux.io.outB.bits.corrupt
+
+
+
 
       // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
-      val replySelector = fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source)
-      replyFromDRAMDemux.io.sel := replySelector
-     // SynthesizePrintf("out.d.fire %d, replyFromDRAMDemux.io.sel %d\n", out.d.fire, fetch_unit.io.SrcId.valid && (fetch_unit.io.SrcId.bits === out.d.bits.source))
+      val replySelectorCond = fetch_units.map{ fetch_unit => 
+        val replySelector = fetch_unit.SrcId.valid && (fetch_unit.SrcId.bits === out.d.bits.source)
+        replySelector
+      }
+      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) // if any conditions are true, broadcast to fetch units
+      replyFromDRAMDemux.io.outB.ready := false.B // default 
+      for (n <- 0 until fetch_units.length)
+      {
+        val fetch_unit = fetch_units(n)
+        fetch_unit.inReply.valid := replySelectorCond(n)
+        fetch_unit.inReply.bits := replyFromDRAMDemux.io.outB.bits
+        when (replySelectorCond(n)) // when this fetch unit matches src ID, we fed that ready signal to demux
+        {
+          replyFromDRAMDemux.io.outB.ready := fetch_unit.inReply.ready // may need to set a default ready
+        }
+      }
 
-      //when (out.a.fire)
-      //{
-      //  //SynthesizePrintf("out.a.fire out.a.address 0x%x\n", out.a.bits.address)
-      //}
+
 
 
       // Either from trapper or directly from DRAM if not an rme request
       TLArbiter.robin(in_edge, in.d, trapper.io.TLInD, replyFromDRAMDemux.io.outA)
 
       // Outgoing arbiter for passthrough and RME requests
-      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_unit.io.OutReq)
+      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_units.map(fetch_unit => fetch_unit.OutReq):_*)
       
 
 
