@@ -39,9 +39,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         val io = IO(new Bundle {
             // Fetch Unit Port
-            //val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams))
-            val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
-            val isBaseRequest = Output(Bool())
+            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams))
+            //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
+            //val isBaseRequest = Output(Bool())
 
             // Control Unit Port
             //val ControlUnit = Flipped(ControlUnitRequestorPort())
@@ -84,7 +84,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         
 
 
-        when (io.FetchReq.fire)
+        when (io.FetchUnit.fire)
         {
             SynthesizePrintf("[REQUESTOR] ==> Sent request to fetch unit\n")
         }
@@ -96,9 +96,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         requestQueue.io.enq <> io.Trapper.Request // queue up requests to prevent stalls
         io.Trapper.Request.ready := requestQueue.io.enq.ready
 
-        io.FetchReq.valid := false.B // default to false
-        io.FetchReq.bits := baseRequest // default 
-        io.isBaseRequest := false.B
+        io.FetchUnit.valid := false.B // default to false
+        io.FetchUnit.bits.FetchReq := baseRequest // default 
+        io.FetchUnit.bits.isBaseRequest := false.B
         readyNextReq := ModifiedRequestsSent
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
         
@@ -169,9 +169,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 // cache line size = 64 bytes, so we increment each request by 0x40
                 sendRequest.bits.address := baseRequest.address + (TotalCacheLinesSent * 0x40.U)
                 sendRequest.valid := true.B && !readyNextReq
-                io.FetchReq.bits := sendRequest.bits
-                io.FetchReq.valid := sendRequest.valid
-                io.isBaseRequest := (TotalCacheLinesSent === 0.U) // first req
+                io.FetchUnit.bits.FetchReq := sendRequest.bits
+                io.FetchUnit.valid := sendRequest.valid
+                io.FetchUnit.bits.isBaseRequest := (TotalCacheLinesSent === 0.U) // first req
 
 
 
@@ -189,10 +189,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 // if we have an offset > 64 we can skip a line)
                 TotalCacheLinesNeeded       := Mux(ModifiedRequestsSent, // maybe an error?
                     0.U, TotalCacheLinesNeeded) 
-                TotalCacheLinesSent         := Mux(!io.FetchReq.fire, TotalCacheLinesSent,
+                TotalCacheLinesSent         := Mux(!io.FetchUnit.fire, TotalCacheLinesSent,
                     Mux(TotalCacheLinesSent < TotalCacheLinesNeeded - 1.U, TotalCacheLinesSent + 1.U, 0.U))
                 ModifiedRequestsSent        := Mux(TotalCacheLinesSent === (TotalCacheLinesNeeded - 1.U) && 
-                    io.FetchReq.fire, true.B, false.B)
+                    io.FetchUnit.fire, true.B, false.B)
             }
         }
 

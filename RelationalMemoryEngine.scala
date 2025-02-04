@@ -26,6 +26,7 @@ case class RelMemParams (
     controlBeatBytes : Int = 8,
     DataSPMSize : Int = 1024,
     MetadataSPMSize : Int = 1024,
+    nFetchUnits : Int = 4,
 )
 
 
@@ -39,7 +40,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val addr = Seq(AddressSet(params.rmeaddress, params.rmeAddressSize))
     
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
-
+    
     }
 
     /*
@@ -167,11 +168,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val demux = Module(new ConditionalDemuxA(inParams))
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
       //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
-
+      
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
       val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
-      val fetch_units = VecInit(Seq.tabulate(4) { j =>
+      val fetch_units = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
         Module(new FetchUnitRME(params, node, in_edge, i, j)).io
       })
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
@@ -198,7 +199,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-
+      /*
+        Fetch Unit broadcast 
+      */
       // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
       val replySelectorCond = fetch_units.map{ fetch_unit => 
         val replySelector = fetch_unit.SrcId.valid && (fetch_unit.SrcId.bits === out.d.bits.source)
@@ -241,18 +244,34 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       requestor.io.Config := config
 
+      /*
+        FetchUnit(s)/Requestor connection
+      */
+      val ohFetchUnitsReady = PriorityEncoderOH(fetch_units.map(fetch_unit => fetch_unit.Requestor.ready))
+      requestor.io.FetchUnit.ready := ohFetchUnitsReady.reduce(_||_) // this should fire to the right one
+      for (n <- 0 until fetch_units.length)
+      {
+          val fetch_unit = fetch_units(n)
+          fetch_unit.Requestor.valid := ohFetchUnitsReady(n) && requestor.io.FetchUnit.valid
+          fetch_unit.Requestor.bits := requestor.io.FetchUnit.bits
+
+      }
+
+      //val fetch_units_req_arb = Module(new RRArbiter(new RequestorFetchUnitPort(inParams), params.nFetchUnits))
+      //fetch_units_req_arb.io.ou
 
 
-      fetch_unit.io.FetchReq.valid := requestor.io.FetchReq.valid
-      requestor.io.FetchReq.ready := fetch_unit.io.FetchReq.ready
-      fetch_unit.io.FetchReq.bits := requestor.io.FetchReq.bits
-       fetch_unit.io.isBaseRequest := requestor.io.isBaseRequest
+      //fetch_unit.io.FetchReq.valid := requestor.io.FetchReq.valid
+      //requestor.io.FetchReq.ready := fetch_unit.io.FetchReq.ready
+      //fetch_unit.io.FetchReq.bits := requestor.io.FetchReq.bits
+      //fetch_unit.io.isBaseRequest := requestor.io.isBaseRequest
 
       //fetch_unit.io.Requestor.valid := requestor.io.FetchUnit.valid
       //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
 
-
-
+      
+      // we need some extra logic here before we can do this with an arbiter
+      // we need to make sure that we aren't packing separate requests
       control_unit.io.FetchUnitPort.bits := fetch_unit.io.ControlUnit.bits
       control_unit.io.FetchUnitPort.valid := fetch_unit.io.ControlUnit.valid
       fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready

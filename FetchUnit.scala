@@ -38,9 +38,9 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     val tlOutParams = tlOutEdge.bundle
     val io = IO(new Bundle {
         // Requestor Port
-        //val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle))) // Receive address to request from the Requestor Module]
-        val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
-        val isBaseRequest = Flipped(Output(Bool()))
+        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle))) // Receive address to request from the Requestor Module]
+        //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
+        //val isBaseRequest = Flipped(Output(Bool()))
         //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
         //val Requestor_FetchReq = Flipped(Decoupled(new TLBundleA(tlInEdge.bundle)))
 
@@ -79,7 +79,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     */
 
     val baseReq = Reg(new TLBundleA(tlOutParams))
-        baseReq := Mux(io.isBaseRequest && io.FetchReq.fire, io.FetchReq.bits, baseReq)
+        baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         when(io.OutReq.fire)
         {
             SynthesizePrintf("[FetchUnit] ==> fired request to DRAM src: %d\n", io.OutReq.bits.source)
@@ -104,11 +104,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
         val currentBaseAddr = RegInit(0.U(64.W))
         val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
-        currentlyBeating := Mux(currentlyBeating, !a_done, io.FetchReq.fire)
-        currentRequest := Mux(io.FetchReq.fire, io.FetchReq.bits, currentRequest)
+        currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire)
+        currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
         beatingRequest.bits := currentRequest
         beatingRequest.valid := currentlyBeating
-        io.FetchReq.ready := !currentlyBeating && !hasActiveRequest
+        io.Requestor.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
         
@@ -167,7 +167,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.data := dataReg
 
         // we no longer have an active request when we send it to control unit
-        hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.FetchReq.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
+        hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
         io.SrcId.bits := currentRequest.source
         io.SrcId.valid := hasActiveRequest
 }
