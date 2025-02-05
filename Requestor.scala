@@ -9,9 +9,16 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+import _root_.subsystem.rme.subsystem.rme.IDAllocator
 
 
 
+case class RequestDescriptor(maxID : Int) extends Bundle
+{
+    val baseID = UInt(log2Ceil(maxID).W)
+    val allocID = UInt(log2Ceil(maxID).W)
+    val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
+}
 
 case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
 {
@@ -19,10 +26,11 @@ case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
 }
 
 
-case class RequestorFetchUnitPort(params: TLBundleParameters) extends Bundle
+case class RequestorFetchUnitPort(params: TLBundleParameters, maxID: Int) extends Bundle
 {
     val FetchReq = Output(new TLBundleA(params))
     val isBaseRequest = Output(Bool())
+    val descriptor = Output(new RequestDescriptor(maxID))
 }
 
 
@@ -32,6 +40,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val tlOutParams = tlOutEdge.bundle
         //val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
         val tlInParams = tlInEdge.bundle
+        val maxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
 
          def divideCeil(a: UInt, b: UInt): UInt = {
             (a + b - 1.U) / b
@@ -39,12 +48,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         val io = IO(new Bundle {
             // Fetch Unit Port
-            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams))
+            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))
             //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
             //val isBaseRequest = Output(Bool())
 
             // Control Unit Port
-            //val ControlUnit = Flipped(ControlUnitRequestorPort())
+            val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(maxID)))
 
             // Config Port
             val Config = Flipped(RMEConfigPortIO())
@@ -55,6 +64,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         }).suggestName(s"requestorio_$instance")
 
         val CacheLineSize = 64 // cache line size in bytes
+        val id_allocator = Module(new IDAllocator(params.minSource, maxID))
+
+
         /*
             We operate on a single bit state machine:
 
@@ -68,7 +80,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = RegInit(true.B)
 
-        // What happens if enabled column count changes while we're handling request? 
+        // What happens if enabled column count changes while we're handling request? --> we can probably relax this assumption
         // I think this will lead to issues of incomplete request formation
         // We will load a new config here so it does not get modified mid request generation
         val CurrentRowSize = RegInit(0.U(32.W)) // size of each row in database
@@ -98,11 +110,17 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
+        io.FetchUnit.bits.descriptor.baseID := baseRequest.source
+        io.FetchUnit.bits.descriptor.allocID := id_allocator.io.newID.bits
+
+         // this will need to be handled differently once we have multiple valuable data in a single cache line
+        io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
+
         io.FetchUnit.bits.isBaseRequest := false.B
         readyNextReq := ModifiedRequestsSent
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
+        id_allocator.io.retireID <> io.ControlUnit // Control unit will retire IDs
         
-
         
 
         // Set outputs for each state
@@ -170,11 +188,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.bits.address := baseRequest.address + (TotalCacheLinesSent * 0x40.U)
                 sendRequest.valid := true.B && !readyNextReq
                 io.FetchUnit.bits.FetchReq := sendRequest.bits
-                io.FetchUnit.valid := sendRequest.valid
+                io.FetchUnit.valid := sendRequest.valid && id_allocator.io.newID.fire
+                id_allocator.io.newID.ready := io.FetchUnit.ready // circular logic?
                 io.FetchUnit.bits.isBaseRequest := (TotalCacheLinesSent === 0.U) // first req
-
-
-
 
 
                 /*

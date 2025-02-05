@@ -17,7 +17,8 @@ import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
 import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
 import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
-
+import chisel3.util.RRArbiter
+import _root_.subsystem.rme.FetchUnitRME
 
 case class RelMemParams (
     regaddress: Int = 0x3000000,
@@ -27,6 +28,7 @@ case class RelMemParams (
     DataSPMSize : Int = 1024,
     MetadataSPMSize : Int = 1024,
     nFetchUnits : Int = 4,
+    minSource : Int = 16
 )
 
 
@@ -159,11 +161,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val (in, in_edge) = node.in(i)
       val outParams = out_edge.bundle
       val inParams = in_edge.bundle
+
+      val maxID = (math.pow(2, inParams.sourceBits)-1).toInt
       out.b <> in.b
       out.c <> in.c
       out.e <> in.e
       println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
-      println(s"source bits ${out.a.bits.source.getWidth}\n")
+      println(s"source out bits ${out.a.bits.source.getWidth}\n")
       //val inDBeats = in_edge.numBeats(in.d.bits)
       //val demux = Module(new ConditionalDemuxA(inParams))
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
@@ -173,7 +177,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
       val fetch_units = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
-        Module(new FetchUnitRME(params, node, in_edge, i, j)).io
+        val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i, j))
+        fetch_unit.io
       })
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
@@ -227,7 +232,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       TLArbiter.robin(in_edge, in.d, trapper.io.TLInD, replyFromDRAMDemux.io.outA)
 
       // Outgoing arbiter for passthrough and RME requests
-      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_units.map(fetch_unit => fetch_unit.OutReq):_*)
+      val fetch_unit_outbound = fetch_units.map(fetch_unit => fetch_unit.OutReq)
+      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_unit_outbound:_*)
       
 
 
@@ -270,11 +276,18 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
 
       
+      
+
+      val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, maxID), params.nFetchUnits))
+      val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
+      ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
+      control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
+
       // we need some extra logic here before we can do this with an arbiter
       // we need to make sure that we aren't packing separate requests
-      control_unit.io.FetchUnitPort.bits := fetch_unit.io.ControlUnit.bits
-      control_unit.io.FetchUnitPort.valid := fetch_unit.io.ControlUnit.valid
-      fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready
+      //control_unit.io.FetchUnitPort.bits := fetch_unit.io.ControlUnit.bits
+      //control_unit.io.FetchUnitPort.valid := fetch_unit.io.ControlUnit.valid
+      //fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready
 
 
 

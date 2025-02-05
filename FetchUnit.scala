@@ -12,10 +12,11 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class FetchUnitControlPort(tlParams : TLBundleParameters) extends Bundle
+case class FetchUnitControlPort(tlParams : TLBundleParameters, maxID : Int) extends Bundle
 {
     val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
     val baseReq = Output(new TLBundleA(tlParams))
+    val descriptor = Output(new RequestDescriptor(maxID))
 }
 
 
@@ -36,9 +37,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     val tlOutA = out.a
     val tlOutD = out.d
     val tlOutParams = tlOutEdge.bundle
+    val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val io = IO(new Bundle {
         // Requestor Port
-        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle))) // Receive address to request from the Requestor Module]
+        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle, maxID))) // Receive address to request from the Requestor Module]
         //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
         //val isBaseRequest = Flipped(Output(Bool()))
         //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
@@ -57,29 +59,18 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         
         
         // Control Unit Port
-        val ControlUnit = Decoupled(FetchUnitControlPort(tlOutParams))
+        val ControlUnit = Decoupled(FetchUnitControlPort(tlOutParams, maxID))
 
 
         // Trapper port --> don't think we need this
         //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
     }).suggestName(s"fetchunitio_$instance-$subInstance")
-    println("FETCH UNIT\n\n\n")
-    println("FETCH UNIT\n\n\n")
-    println("FETCH UNIT\n\n\n")
-    //println(io.Requestor.bits.)
-    //println(io.Requestor.toString())
-    //println(io.Requestor.toString())
-    println("FETCH UNIT\n\n\n")
-    println("FETCH UNIT\n\n\n")
-    println("FETCH UNIT\n\n\n")
 
-    /*
-        Let's start by being able to manage 1 request at a time which will entail
-        taking in a base address and communicating the with Requestor to get the Request Addresses
-    */
 
-    val baseReq = Reg(new TLBundleA(tlOutParams))
+        val baseReq = Reg(new TLBundleA(tlOutParams))
+        val descriptor = Reg(new RequestDescriptor(maxID))
         baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
+        descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
             SynthesizePrintf("[FetchUnit] ==> fired request to DRAM src: %d\n", io.OutReq.bits.source)
@@ -90,11 +81,15 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
             //SynthesizePrintf("[FetchUnit] ==> received reply DRAM\n")
         }
 
-        //SynthesizePrintf("[FetchUnit] ==> io.OutReq.ready %d, io.OutReq.valid %d\n", io.OutReq.ready, io.OutReq.valid)
-        //SynthesizePrintf("[FetchUnit] ==> io.inReply.ready %d, io.inReply.valid %d\n", io.inReply.ready, io.inReply.valid)
+
+
+
+
         /*
+
             [ DRAM OUTBOUND ]
             Handle outbound requests to DRAM
+
         */
         // Store Current Request in a register to keep its state, pass beating request out in Wire
         // we may not need to store this in a register here -->?
@@ -118,18 +113,16 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
             SynthesizePrintf("addr 0x110a71300. %d, io.OutReq.ready %d\n", currentlyBeating, io.OutReq.ready)
         }
 
+
+
         /*
+
             [ DRAM INBOUND ]
             Handle Inbound replies from DRAM
+
         */
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
 
-
-
-
-        println("io.inReply.bits.data.getWidth %d\n", io.inReply.bits.data.getWidth)
-        
-        //val dataRegWriteIndex = RegInit(0.U(log2Ceil(64).W)) //  index for each byte
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
         val dataRegFull = RegInit(false.B)
         val receivedAllData = RegInit(true.B)
@@ -138,7 +131,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data
         val dataWidth = io.inReply.bits.data.getWidth
-        println(s"\n\nDATA WIDTH FETCH UNIT $dataWidth\n\n")
         val shiftNewData = io.inReply.bits.data //+ d_count // count is to test
         
         // we have to splice the data after shift because zeroes are put in the top
@@ -147,9 +139,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         {
             SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
         }
-
-        // freezing at [TRAPPER] ==> request in 0x110a71300
-
 
         /*
             if (done receiving data)
@@ -165,6 +154,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
+        io.ControlUnit.bits.descriptor := descriptor
 
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests

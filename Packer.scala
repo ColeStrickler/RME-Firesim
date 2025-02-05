@@ -13,20 +13,23 @@ import org.apache.commons.compress.java.util.jar.Pack200.Packer
 
 
 
-case class PackerColExtractIO() extends Bundle {
+case class PackerColExtractIO(maxID : Int) extends Bundle {
     val dataIn = Output(UInt(512.W))
     val dataSize = Output(UInt(10.W))
+    val descriptorIn = Output(RequestDescriptor(maxID))
 }
 
 
-class PackerRME extends Module {
+class PackerRME(maxID: Int) extends Module {
 
     val io = IO(new Bundle {
-        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO()))
+        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(maxID)))
         val PackedLine = DecoupledIO(UInt(512.W))
     })
 
 
+    //val active :: clear :: Nil = Enum(2)
+    //val stateReg = RegInit(active)
     val packedLine = RegInit(0.U(512.W))
     val tmpWire = WireInit(0.U(512.W))
     val dataInSizeBits = io.ColExtractor.bits.dataSize * 8.U
@@ -38,8 +41,8 @@ class PackerRME extends Module {
 
     // we keep taking data 
     val dataInBounds = NumPackedBytes + io.ColExtractor.bits.dataSize <= 64.U
-    val willOverflow = io.ColExtractor.valid && !dataInBounds
-    val ready = io.ColExtractor.valid && dataInBounds
+    val willOverflow = io.ColExtractor.valid && !dataInBounds 
+    val ready = io.ColExtractor.valid && dataInBounds //&& (stateReg === active)
     io.ColExtractor.ready := ready
 
     //when (io.ColExtractor.fire)
@@ -48,8 +51,15 @@ class PackerRME extends Module {
     //}
 
     /*
-        We will need to handle cases when the data doesn't exactly add up to 64bytes eventually
+        We will need to handle cases when the data doesn't exactly add up to 64bytes eventually --> actually no, we relax this constraint
     */
+    val colWidthBits = 16*8
+    val startBit : UInt = colWidthBits.U*io.ColExtractor.bits.descriptorIn.requestPlacement // double check
+    // will need more logic for multi-column descriptors
+
+
+    val mask = ((BigInt(1) << colWidthBits) - 1).U << (startBit)
+
     when (newDataIn)
     {
         //SynthesizePrintf("[PACKER] --> current line 0x%x\n", packedLine)
@@ -80,7 +90,9 @@ class PackerRME extends Module {
             }
             is (16.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
+                val writeData = io.ColExtractor.bits.dataIn(511, 511-127) << startBit
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
+                //packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
                 NumPackedBytes := NumPackedBytes + 16.U
             }
             is (32.U)
@@ -105,8 +117,14 @@ class PackerRME extends Module {
 
     when (io.PackedLine.fire)
     {
-        NumPackedBytes := 0.U
+        NumPackedBytes := 0.U  
     }
 
+
+    // actually we don't need to do this.
+    //when (stateReg === clear)
+    //{
+    //    packedLine := 0.U // because we are writing via masking, we must zero the register before we begin taking in new
+    //}
     
 }

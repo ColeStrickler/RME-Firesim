@@ -14,10 +14,11 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class ColumnExtractorIO() extends Bundle {
-    val CacheLineIn = Flipped(DecoupledIO(UInt(512.W))) // take in an entire cache line 
+case class ColumnExtractorIO(maxID : Int) extends Bundle {
+    val CacheLineIn = Flipped(DecoupledIO(UInt(512.W))) // take in an entire cache line
+    val DescriptorIn = Input(RequestDescriptor(maxID))
    // val DataSizeOut = Output(UInt(7.W)) // size in bytes
-    val Packer = DecoupledIO(PackerColExtractIO())
+    val Packer = DecoupledIO(PackerColExtractIO(maxID))
     //val Data64Out = DecoupledIO(UInt(64.W))
     //val Data32Out = DecoupledIO(UInt(32.W))
     //val Data16Out = DecoupledIO(UInt(16.W))
@@ -33,11 +34,11 @@ case class ColumnExtractorIO() extends Bundle {
 
 
 
-class ColumnExtractor extends Module {
+class ColumnExtractor(maxID: Int) extends Module {
     /*
         We will shift in a cache line and extract the needed parts 
     */
-    val io = IO(ColumnExtractorIO())
+    val io = IO(ColumnExtractorIO(maxID))
 
     val CurrentColNum = RegInit(0.U(8.W))
     val tmpLine = RegInit(0.U(512.W))
@@ -79,6 +80,7 @@ class ColumnExtractor extends Module {
     io.Packer.bits.dataIn := Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
     io.Packer.bits.dataSize := 16.U
     io.Packer.valid := hasValidLine
+    io.Packer.bits.descriptorIn := io.DescriptorIn
 
 
 }
