@@ -64,7 +64,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         }).suggestName(s"requestorio_$instance")
 
         val CacheLineSize = 64 // cache line size in bytes
-        val id_allocator = Module(new IDAllocator(params.minSource, maxID))
+
+        // this isn't entirely flexible, assumes 1 bit source expansion
+        val id_allocator = Module(new IDAllocator(math.pow(2, tlInParams.sourceBits-1).toInt, maxID))
 
 
         /*
@@ -98,7 +100,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         when (io.FetchUnit.fire)
         {
-            SynthesizePrintf("[REQUESTOR] ==> Sent request to fetch unit\n")
+            SynthesizePrintf("[REQUESTOR] ==> Sent request to fetch unit base src: %d, alloc src %d\n", baseRequest.source, id_allocator.io.newID.bits)
         }
         /* 
             Defaults
@@ -119,8 +121,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.bits.isBaseRequest := false.B
         readyNextReq := ModifiedRequestsSent
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
-        id_allocator.io.retireID <> io.ControlUnit // Control unit will retire IDs
-        
+
+
+        id_allocator.io.retireID.bits := io.ControlUnit.bits.retireID // Control unit will retire IDs
+        id_allocator.io.retireID.valid := io.ControlUnit.valid
+        io.ControlUnit.ready := id_allocator.io.retireID.ready
+        id_allocator.io.newID.ready := false.B
         
 
         // Set outputs for each state
@@ -166,6 +172,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 TotalCacheLinesNeeded       := 4.U//cacheLinesNeeded
                 TotalCacheLinesSent         := 0.U
 
+                id_allocator.io.newID.ready := false.B
 
             }
 

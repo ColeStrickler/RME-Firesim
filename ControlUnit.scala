@@ -19,7 +19,7 @@ import com.fasterxml.jackson.databind.JsonSerializable.Base
 
 case class ControlUnitRequestorPort(maxID : Int) extends Bundle
 {
-    val retireID = UInt(log2Ceil(maxID).W)
+    val retireID = Output(UInt(log2Ceil(maxID).W))
 }
 
 case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle 
@@ -123,5 +123,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         */
         io.RequestorPort.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
         io.RequestorPort.valid := io.FetchUnitPort.fire
+        val ready = WireInit(false.B)
+        ready := io.RequestorPort.ready 
 
 }

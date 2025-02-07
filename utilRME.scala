@@ -50,15 +50,26 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
 
 /*
   Tile link diplomatic module that will increase the number of source IDs available to a downstream client.
+
+  needed = new number of source IDs to accomodate
 */
-class TLSourceExpander(baseWidth: Int, extraBits: Int) extends Module {
-  val new_width = math.pow(2, baseWidth+extraBits).toInt
-  private val client = TLMasterParameters.v1(
-    name     = "TLSourceExpander",
-    sourceId = IdRange(0, new_width)
-    )
+class TLSourceExpander(needed: Int)(implicit p: Parameters)  extends LazyModule {
+  def findBitsNeeded(baseWidth: Int, need: Int, check: Int) : Int = { // helper function to find bits needed
+    assert(check <= 3) // this shouldnt happen
+    if (math.pow(2,baseWidth + check) - math.pow(2, baseWidth) >= need)
+      check
+    else
+      findBitsNeeded(baseWidth, need, check+1)
+  }
+  
   val node = (new TLAdapterNode(
     clientFn  = { cp => 
+      val baseWidth = log2Ceil(cp.endSourceId)
+      val new_width = math.pow(2, baseWidth+findBitsNeeded(baseWidth, needed, 1)).toInt
+      val client = TLMasterParameters.v1(
+        name     = "TLSourceExpander",
+        sourceId = IdRange(0, new_width)
+      )
       // We erase all client information since we crush the source Ids
       TLMasterPortParameters.v1(
         clients = Seq(client.v1copy(requestFifo = cp.clients.exists(_.requestFifo))),
@@ -66,17 +77,35 @@ class TLSourceExpander(baseWidth: Int, extraBits: Int) extends Module {
         requestFields = cp.requestFields,
         responseKeys = cp.responseKeys)
     },
-    managerFn = { mp => mp.v1copy(managers = mp.managers.map(m => m.v1copy(fifoId = if (new_width==1) Some(0) else m.fifoId)))
+    managerFn = { mp => mp.v1copy(managers = mp.managers.map(m => m.v1copy(fifoId = if (/*new_width==1*/false) Some(0) else m.fifoId))) // shouldn't happen
     }) {
     //override def circuitIdentity = edges.in.map(_.client).forall(noShrinkRequired)
   })
+
+
+  lazy val module = new Impl
+  class Impl extends LazyModuleImp(this) {
+    val len = node.in.length
+
+    for (i <- 0 until len)
+    {
+      val (bundle, edge) = node.in(i)
+      val (bundle_out, edge_out) = node.out(i)
+
+      //when (bundle.a.valid)
+      //{
+      //  SynthesizePrintf("bundle.a.valid\n")
+      //}
+      bundle_out <> bundle
+    }
+  }
 }
 
 
 object TLSourceExpander {
-  def apply(baseWidth: Int, extraBits : Int) : TLAdapterNode = {
-    val SourceExpander = Module(new TLSourceExpander(baseWidth, extraBits))
-    SourceExpander.node
+  def apply(needed: Int)(implicit p: Parameters) : TLSourceExpander = {
+    val SourceExpander = LazyModule(new TLSourceExpander(needed))
+    SourceExpander
   }
 }
 
@@ -154,8 +183,7 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
 
   when (io.sel)
   {
-    //SynthesizePrintf("Selector = 1\n")
-    
+    SynthesizePrintf("Selector = 1\n")
   }
 
 

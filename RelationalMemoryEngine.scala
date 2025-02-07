@@ -28,7 +28,8 @@ case class RelMemParams (
     DataSPMSize : Int = 1024,
     MetadataSPMSize : Int = 1024,
     nFetchUnits : Int = 4,
-    minSource : Int = 16
+    inBoundXbar : Option[TLXbar] = None,
+    //minSource : Int = 16
 )
 
 
@@ -176,7 +177,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
       val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
       val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
-      val fetch_units = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
+      val fetch_units : Vec[FetchUnitIO] = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
         val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i, j))
         fetch_unit.io
       })
@@ -202,8 +203,23 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
       
 
-
-
+      //when (in.a.fire)
+      //{
+      //  SynthesizePrintf(s"in.a.fire ${in.a.fire}\n")
+      //}   
+      //when (in.d.fire)
+      //{
+      //  SynthesizePrintf("in.d.fire\n")
+      //}
+//
+      //when (out.a.fire)
+      //{
+      //  SynthesizePrintf("out.a.fire\n")
+      //}
+      //when (out.d.fire)
+      //{
+      //  SynthesizePrintf("out.d.fire\n")
+      //}
       /*
         Fetch Unit broadcast 
       */
@@ -233,7 +249,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       // Outgoing arbiter for passthrough and RME requests
       val fetch_unit_outbound = fetch_units.map(fetch_unit => fetch_unit.OutReq)
-      TLArbiter.robin(out_edge, out.a, demux.io.outA, fetch_unit_outbound:_*)
+      TLArbiter.robin(out_edge, out.a, (Seq(demux.io.outA) ++ fetch_unit_outbound):_*) // we have to pass as a single Seq i guess
       
 
 
@@ -282,6 +298,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
       control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
+      requestor.io.ControlUnit <> control_unit.io.RequestorPort
 
       // we need some extra logic here before we can do this with an arbiter
       // we need to make sure that we aren't packing separate requests

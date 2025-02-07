@@ -20,27 +20,10 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters, maxID : Int) exte
 }
 
 
-
-/* 
-    I think we can have several of these, and overlap their latency
-
-
-
-    We will also need the incoming requests back to the RME somehow, otherwise we may get a reply that is meant for normal memory
-    
-*/
-
-class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int, subInstance: Int)(
-    implicit p: Parameters) extends Module {
-
-    val (out, tlOutEdge) = adapter.out(instance)
-    val tlOutA = out.a
-    val tlOutD = out.d
-    val tlOutParams = tlOutEdge.bundle
-    val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
-    val io = IO(new Bundle {
-        // Requestor Port
-        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInEdge.bundle, maxID))) // Receive address to request from the Requestor Module]
+case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, maxID : Int) extends Bundle
+{
+// Requestor Port
+        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))) // Receive address to request from the Requestor Module]
         //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
         //val isBaseRequest = Flipped(Output(Bool()))
         //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
@@ -61,10 +44,27 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         // Control Unit Port
         val ControlUnit = Decoupled(FetchUnitControlPort(tlOutParams, maxID))
 
+}
 
-        // Trapper port --> don't think we need this
-        //val OutputDone = Output(Bool()) // output done tick. Signal so we can start sending back
-    }).suggestName(s"fetchunitio_$instance-$subInstance")
+
+/* 
+    I think we can have several of these, and overlap their latency
+
+
+
+    We will also need the incoming requests back to the RME somehow, otherwise we may get a reply that is meant for normal memory
+    
+*/
+
+class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int, subInstance: Int)(
+    implicit p: Parameters) extends Module {
+
+    val (out, tlOutEdge) = adapter.out(instance)
+    val tlOutA = out.a
+    val tlOutD = out.d
+    val tlOutParams = tlOutEdge.bundle
+    val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+    val io = IO(new FetchUnitIO(tlInEdge.bundle, tlOutParams, maxID)).suggestName(s"fetchunitio_$instance-$subInstance")
 
 
         val baseReq = Reg(new TLBundleA(tlOutParams))
@@ -102,10 +102,12 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire)
         currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
         beatingRequest.bits := currentRequest
+        beatingRequest.bits.source := descriptor.allocID
         beatingRequest.valid := currentlyBeating
         io.Requestor.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
+        
         
 
         when (currentRequest.address ===  0x110a71300L.U)
@@ -158,6 +160,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
-        io.SrcId.bits := currentRequest.source
+        io.SrcId.bits := descriptor.allocID
         io.SrcId.valid := hasActiveRequest
 }
