@@ -85,20 +85,20 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
-        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.valid
+        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.fire
         ColExtractor.io.DescriptorIn := io.FetchUnitPort.bits.descriptor
 
 
         // we modified this, and think this should work.if currently packing a line, we need to wait to pack the whole thing
         // we can add more packers eventually and arbitrate over the trapper port
         currentlyPacking := Mux(currentlyPacking, !io.TrapperPort.fire, io.FetchUnitPort.fire)
-        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || (io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source))
+        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
 
 
         // this should fire after we get an entire cache line
         BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
         packer.io.ColExtractor <> ColExtractor.io.Packer
-        io.TrapperPort.bits.baseReq <> BaseReq
+        io.TrapperPort.bits.baseReq := BaseReq
         io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
         io.TrapperPort.valid := packer.io.PackedLine.valid
         packer.io.PackedLine.ready := io.TrapperPort.ready

@@ -45,10 +45,10 @@ class PackerRME(maxID: Int) extends Module {
     val ready = io.ColExtractor.valid && dataInBounds //&& (stateReg === active)
     io.ColExtractor.ready := ready
 
-    //when (io.ColExtractor.fire)
-    //{
-    //    SynthesizePrintf("[PACKER] --> received extracted column 0x%x\n", io.ColExtractor.bits.dataIn)
-    //}
+    when (io.ColExtractor.fire)
+    {
+        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, num packed %d\n", io.ColExtractor.bits.dataIn, NumPackedBytes)
+    }
 
     /*
         We will need to handle cases when the data doesn't exactly add up to 64bytes eventually --> actually no, we relax this constraint
@@ -118,6 +118,7 @@ class PackerRME(maxID: Int) extends Module {
     when (io.PackedLine.fire)
     {
         NumPackedBytes := 0.U  
+        SynthesizePrintf("io.PackedLine.fire NumPackedBytes %d, willOverflow %d\n", NumPackedBytes, willOverflow)
     }
 
 

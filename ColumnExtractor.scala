@@ -73,7 +73,17 @@ class ColumnExtractor(maxID: Int) extends Module {
         Next state
     */
     //val ReadyNewLine = NumPackedBytes >= 64.U
-    hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
+
+    /*
+        We will change this logic
+    */
+    //hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
+    hasValidLine := io.CacheLineIn.fire
+    when (io.CacheLineIn.fire)
+    {
+        SynthesizePrintf("[ColumnExtractor] --> cache line in\n")
+    }
+    
     //io.DataSizeOut := 16.U
 
     // send in correct number bits to packer
@@ -81,6 +91,4 @@ class ColumnExtractor(maxID: Int) extends Module {
     io.Packer.bits.dataSize := 16.U
     io.Packer.valid := hasValidLine
     io.Packer.bits.descriptorIn := io.DescriptorIn
-
-
 }

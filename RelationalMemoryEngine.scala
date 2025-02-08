@@ -233,7 +233,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       for (n <- 0 until fetch_units.length)
       {
         val fetch_unit = fetch_units(n)
-        fetch_unit.inReply.valid := replySelectorCond(n)
+        fetch_unit.inReply.valid := replySelectorCond(n) && out.d.valid
         fetch_unit.inReply.bits := replyFromDRAMDemux.io.outB.bits
         when (replySelectorCond(n)) // when this fetch unit matches src ID, we fed that ready signal to demux
         {
@@ -298,6 +298,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
       control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
+      //for ((ctrl, i) <- fetch_unit_ctrl_io.zipWithIndex) {
+      //  printf(p"FetchUnit $i: valid=${ctrl.valid}, ready=${ctrl.ready}\n")
+      //}
+      //printf(p"Arbiter Out: valid=${ctrl_unit_arb.io.out.valid}, ready=${ctrl_unit_arb.io.out.ready}\n")
       requestor.io.ControlUnit <> control_unit.io.RequestorPort
 
       // we need some extra logic here before we can do this with an arbiter

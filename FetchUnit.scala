@@ -69,20 +69,24 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         val baseReq = Reg(new TLBundleA(tlOutParams))
         val descriptor = Reg(new RequestDescriptor(maxID))
-        baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
+        baseReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
+        //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit] ==> fired request to DRAM src: %d\n", io.OutReq.bits.source)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d\n", instance.U, subInstance.U, io.OutReq.bits.source)
         }
 
         when (io.inReply.fire)
         {
-            //SynthesizePrintf("[FetchUnit] ==> received reply DRAM\n")
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
         }
 
 
-
+        when (io.ControlUnit.fire)
+        {
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x\n", instance.U, subInstance.U, baseReq.address)
+        }
 
 
         /*
@@ -109,14 +113,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.OutReq <> beatingRequest
         
         
-
-        when (currentRequest.address ===  0x110a71300L.U)
-        {
-            SynthesizePrintf("addr 0x110a71300. %d, io.OutReq.ready %d\n", currentlyBeating, io.OutReq.ready)
-        }
-
-
-
         /*
 
             [ DRAM INBOUND ]
@@ -137,10 +133,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)(511-dataWidth, 0)), dataReg)
-        when (io.inReply.fire)
-        {
-            SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
-        }
+        //when (io.inReply.fire)
+        //{
+        //    SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
+        //}
 
         /*
             if (done receiving data)

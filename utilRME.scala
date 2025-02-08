@@ -27,10 +27,13 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
     val retireID = Flipped(Decoupled(UInt(log2Ceil(maxID).W)))
   })
 
-  val queue_depth = log2Ceil(maxID-minID+1)+1 // should always have room for retirement --> we don't check ready signal in ControlUnit
+  val queue_depth = maxID-minID+1 // should always have room for retirement --> we don't check ready signal in ControlUnit
   val queue = Module(new Queue(UInt(log2Ceil(maxID).W), queue_depth))
   queue.io.enq <> io.retireID
   io.newID <> queue.io.deq
+
+  
+
 
   val initDone = RegInit(false.B)
   val IDValues = VecInit((minID to maxID).map(i => i.U))
@@ -40,12 +43,12 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
   when (!initDone)
   {
     queue.io.enq.bits := IDValues(initCounter)
+    //SynthesizePrintf("IDAllocator init %d counter %d, %d\n", IDValues(initCounter), initCounter, IDValues.length.U)
     queue.io.enq.valid := true.B
     queue.io.deq.ready := false.B
     initCounter := Mux(queue.io.enq.fire, initCounter+1.U, initCounter)
     initDone := Mux(initCounter === (IDValues.length-1).U, true.B, false.B)
   }
-
 }
 
 /*
@@ -97,6 +100,14 @@ class TLSourceExpander(needed: Int)(implicit p: Parameters)  extends LazyModule 
       //  SynthesizePrintf("bundle.a.valid\n")
       //}
       bundle_out <> bundle
+      when (bundle_out.d.valid)
+      {
+        SynthesizePrintf("bundle_out.d.valid\n")
+        when (bundle.d.fire)
+        {
+          SynthesizePrintf("bundle.d.fire\n")
+        }
+      }
     }
   }
 }
