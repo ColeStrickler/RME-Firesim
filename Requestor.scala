@@ -10,6 +10,8 @@ import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import _root_.subsystem.rme.subsystem.rme.IDAllocator
+import scala.annotation.meta.param
+import os.stat
 
 
 
@@ -18,6 +20,8 @@ case class RequestDescriptor(maxID : Int) extends Bundle
     val baseID = UInt(log2Ceil(maxID).W)
     val allocID = UInt(log2Ceil(maxID).W)
     val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
+    val discardFront = UInt(7.W)
+    val discardBack = UInt(7.W)
 }
 
 case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
@@ -69,6 +73,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val id_allocator = Module(new IDAllocator(math.pow(2, tlInParams.sourceBits-1).toInt, maxID))
 
 
+
+        val DatabaseBaseAddress = params.rmeaddress.U
         /*
             We operate on a single bit state machine:
 
@@ -88,21 +94,28 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val CurrentRowSize = RegInit(0.U(32.W)) // size of each row in database
         val CurrentRowCount = RegInit(0.U(32.W))  // count of each row in database
         val CurrentEnabledColumnCount = RegInit(0.U(4.W))  // total number of enabled columns
-        val CurrentColumnWidths = RegInit(0.U(7.W)) // width of ith enabled column
+        val CurrentColumnWidth = RegInit(0.U(7.W)) // width of ith enabled column
         val CurrentColumnOffsets =  RegInit(VecInit(Seq.fill(15)(0.U(7.W)))) // offset off column j from column j-1
         val CurrentFrameOffset = RegInit(0.U(32.W))
 
         // This should give us the total size in bytes we need to grab
         val TotalCacheLinesNeeded = RegInit(0.U(8.W))
         val TotalCacheLinesSent = RegInit(0.U(4.W))
-        
 
 
-        when (io.FetchUnit.fire)
-        {
-            SynthesizePrintf("[REQUESTOR] ==> Sent request to fetch unit base src: %d, alloc src %d\n", baseRequest.source, id_allocator.io.newID.bits)
-        }
-        /* 
+
+        val nDescriptors = RegInit(0.U)
+        nDescriptors := 64.U/io.Config.ColumnWidths
+        val requestOffset = (baseRequest.address - params.rmeaddress.U)
+        val requestRow = requestOffset - (requestOffset % io.Config.RowSize)
+        val row = RegInit(0.U(log2Ceil(params.rmeAddressSize).W))
+        row := requestRow
+        val nDescriptorsSent = RegInit(0.U)
+        val col = RegInit(0.U(log2Ceil(512 + 1).W))
+        val sumOffset = RegInit(0.U(log2Ceil(512 + 1).W))
+        val busWidth = 8.U
+
+              /* 
             Defaults
         */
         stateReg := stateReg
@@ -112,6 +125,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
+        //io.FetchUnit.bits.FetchReq.size := log2Ceil(16).U // size is log2(opsize)
         io.FetchUnit.bits.descriptor.baseID := baseRequest.source
         io.FetchUnit.bits.descriptor.allocID := id_allocator.io.newID.bits
 
@@ -127,21 +141,83 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         id_allocator.io.retireID.valid := io.ControlUnit.valid
         io.ControlUnit.ready := id_allocator.io.retireID.ready
         id_allocator.io.newID.ready := false.B
-        
 
-        // Set outputs for each state
+
+
         switch(stateReg)
         {
-            is (idle) 
+            is (idle)
             {
+                nDescriptorsSent := 0.U
+                col := 0.U
+                sumOffset := 0.U
+                row := requestRow
+                stateReg := Mux(io.Trapper.Request.fire, active, idle)
             }
-            is (active) 
+            is (active)
             {
+
+                val last = col === io.Config.EnabledColumnCount - 1.U
+                val done = last && io.FetchUnit.fire
+                val P_i_j = (io.Config.RowSize * row) + (sumOffset + io.Config.ColumnOffsets(col))
+                val R_i_j = (P_i_j / busWidth) % busWidth
+                val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, busWidth)
+                val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
+                val discardFront = P_i_j % busWidth
+                val discardBack = (P_i_j + io.Config.ColumnWidths) % busWidth
+
+                val sendRequest = Wire(Valid(new TLBundleA(tlInParams)))
+                sendRequest.bits := baseRequest
+                sendRequest.bits.address := R_i_j
+                sendRequest.bits.size := sizeField
+                sendRequest.valid == true.B // i think since we switch states we can always set this valid
+                
+
+                id_allocator.io.newID.ready := io.FetchUnit.ready // we should then fire, claim id and advance
+                val descriptorOut = Wire(RequestDescriptor(maxID))
+                descriptorOut.baseID := baseRequest.source
+                descriptorOut.allocID := id_allocator.io.newID.bits
+                descriptorOut.requestPlacement := nDescriptorsSent
+                descriptorOut.discardFront := discardFront
+                descriptorOut.discardBack := discardBack
+
+
+                io.FetchUnit.bits.FetchReq := sendRequest.bits
+                io.FetchUnit.bits.descriptor := descriptorOut
+                io.FetchUnit.bits.isBaseRequest := false.B
+                io.FetchUnit.valid :=  sendRequest.valid && id_allocator.io.newID.fire
+
+
+                when (io.FetchUnit.fire)
+                {
+                    SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
+                    SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack\n", nBeats, discardFront, discardBack)
+                }
+
+
+
+
+
+
+                sumOffset := Mux(io.FetchUnit.fire, sumOffset + io.Config.ColumnOffsets(col), sumOffset)
+                col := Mux(io.FetchUnit.fire, Mux(last, 0.U, col + 1.U), col)
+                row := Mux(done, row + 1.U, row)
+                stateReg := Mux(done, idle, stateReg)
             }
         }
+        
+        
 
 
+        //when (io.FetchUnit.fire)
+        //{
+        //    SynthesizePrintf("[REQUESTOR] ==> Sent request to fetch unit base src: %d, alloc src %d\n", baseRequest.source, id_allocator.io.newID.bits)
+        //}
+  
+        
 
+
+        /*
         // Next state logic
         switch(stateReg)
         {
@@ -163,21 +239,15 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 CurrentColumnWidths         := io.Config.ColumnWidths
                 CurrentColumnOffsets        := io.Config.ColumnOffsets
                 CurrentFrameOffset          := io.Config.FrameOffset
-
-
                 // Computer how much data we need to fetch to construct a single cache line
                 val singleRowEnColSize = (io.Config.ColumnWidths * io.Config.EnabledColumnCount)
                 val rowsNeeded = divideCeil(64.U, singleRowEnColSize)
                 val cacheLinesNeeded = divideCeil(rowsNeeded*io.Config.RowSize, 64.U(64.W))
                 TotalCacheLinesNeeded       := 4.U//cacheLinesNeeded
                 TotalCacheLinesSent         := 0.U
-
                 id_allocator.io.newID.ready := false.B
 
             }
- 
-
-
             is (active) {
                 /*
                     If we have sent all the necessary requests, we transition back to idle state
@@ -195,6 +265,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.bits.address := baseRequest.address + (TotalCacheLinesSent * 0x40.U)
                 sendRequest.valid := true.B && !readyNextReq
                 io.FetchUnit.bits.FetchReq := sendRequest.bits
+                io.FetchUnit.bits.FetchReq.size := log2Ceil(16).U // size is log2(opsize) --> request at bus width granularity
                 io.FetchUnit.valid := sendRequest.valid && id_allocator.io.newID.fire
                 id_allocator.io.newID.ready := io.FetchUnit.ready // circular logic?
                 io.FetchUnit.bits.isBaseRequest := (TotalCacheLinesSent === 0.U) // first req
@@ -218,6 +289,5 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     io.FetchUnit.fire, true.B, false.B)
             }
         }
-
-    
+            */
 }

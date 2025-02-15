@@ -74,7 +74,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d\n", instance.U, subInstance.U, io.OutReq.bits.source)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d size: %d\n", instance.U, subInstance.U, io.OutReq.bits.source, io.OutReq.bits.size)
         }
 
         when (io.inReply.fire)
@@ -153,7 +153,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
         io.ControlUnit.bits.descriptor := descriptor
-
+  
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
         io.SrcId.bits := descriptor.allocID

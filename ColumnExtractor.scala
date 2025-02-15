@@ -79,10 +79,10 @@ class ColumnExtractor(maxID: Int) extends Module {
     */
     //hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
     hasValidLine := io.CacheLineIn.fire
-    when (io.CacheLineIn.fire)
-    {
-        SynthesizePrintf("[ColumnExtractor] --> cache line in\n")
-    }
+    //when (io.CacheLineIn.fire)
+    //{
+    //    SynthesizePrintf("[ColumnExtractor] --> cache line in\n")
+    //}
     
     //io.DataSizeOut := 16.U
 

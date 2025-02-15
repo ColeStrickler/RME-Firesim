@@ -74,10 +74,10 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         //SynthesizePrintf("[CONTROL UNIT] ==> io.TrapperPort.ready %d, io.TrapperPort.valid %d\n", io.TrapperPort.ready, io.TrapperPort.valid)
         
         
-        when (io.FetchUnitPort.fire)
-        {
-            SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x, data: 0x%x\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.data)
-        }
+        //when (io.FetchUnitPort.fire)
+        //{
+        //    SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x, data: 0x%x\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.data)
+        //}
         val currentlyPacking = RegInit(false.B)
         val BaseReq = Reg(new TLBundleA(tlParams))
         val ColExtractor = Module(new ColumnExtractor(maxID))

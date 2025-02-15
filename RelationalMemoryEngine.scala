@@ -191,9 +191,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         Input and output of RME
       */
       val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
+      val isWritebackToRME = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.PutFullData || in.a.bits.opcode === TLMessages.PutPartialData)
       val demux = Module(new ConditionalDemuxA(in_edge.bundle))
       demux.io.dataIn <> in.a
       demux.io.sel := isRMERequest
+      demux.io.isWriteback := isWritebackToRME && config.Enabled
       trapper.io.TLInA <> demux.io.outB
       //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       

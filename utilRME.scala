@@ -100,14 +100,14 @@ class TLSourceExpander(needed: Int)(implicit p: Parameters)  extends LazyModule 
       //  SynthesizePrintf("bundle.a.valid\n")
       //}
       bundle_out <> bundle
-      when (bundle_out.d.valid)
-      {
-        SynthesizePrintf("bundle_out.d.valid\n")
-        when (bundle.d.fire)
-        {
-          SynthesizePrintf("bundle.d.fire\n")
-        }
-      }
+      //when (bundle_out.d.valid)
+      //{
+      //  SynthesizePrintf("bundle_out.d.valid\n")
+      //  when (bundle.d.fire)
+      //  {
+      //    SynthesizePrintf("bundle.d.fire\n")
+      //  }
+      //}
     }
   }
 }
@@ -148,20 +148,20 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
 
   // Route input based on selector
   when(io.sel) {
-    when (io.dataIn.fire)
-    {
-      SynthesizePrintf("from DRAM back to RME src %d\n", io.dataIn.bits.source)
-    }
+    //when (io.dataIn.fire)
+    //{
+    //  SynthesizePrintf("from DRAM back to RME src %d\n", io.dataIn.bits.source)
+    //}
     
     io.outB <> io.dataIn
     io.outA.bits := dummyMessage
     io.outA.valid := false.B
     readyOther := io.outA.ready
   }.otherwise {
-    when (io.dataIn.fire)
-    {
-      SynthesizePrintf("from DRAM skip RME src %d\n", io.dataIn.bits.source)
-    }
+    //when (io.dataIn.fire)
+    //{
+    //  SynthesizePrintf("from DRAM skip RME src %d\n", io.dataIn.bits.source)
+    //}
     
     io.outA <> io.dataIn
     io.outB.bits := dummyMessage
@@ -175,6 +175,7 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
   val io = IO(new Bundle {
     val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
     val sel    = Input(Bool())   // Selector (1-bit)
+    val isWriteback = Input(Bool())
     val outA   = DecoupledIO(new TLBundleA(params))// Output to location A
     val outB   = DecoupledIO(new TLBundleA(params)) // Output to location B
   })
@@ -192,10 +193,11 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
   dummyMessage.data := 0.U
   dummyMessage.corrupt := false.B
 
-  when (io.sel)
-  {
-    SynthesizePrintf("Selector = 1\n")
-  }
+  
+  //when (io.sel)
+  //{
+  //  SynthesizePrintf("Selector = 1\n")
+  //}
 
 
 
@@ -208,6 +210,7 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
     
   }.otherwise {
     io.outA <> io.dataIn
+    io.outA.valid := (!io.isWriteback && io.dataIn.valid) // we want to ignore writebacks
     io.outB.bits := dummyMessage
     io.outB.valid := false.B
     readyOther := io.outB.ready
