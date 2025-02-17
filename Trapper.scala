@@ -113,8 +113,12 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
        // rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
 
 
+       // since we modify the size to be bus width granularity, we set it back here
+        val baseReqUpdated = Wire(new TLBundleA(tlInParams))
+        baseReqUpdated := io.ControlUnit.bits.baseReq
+        baseReqUpdated.size := 6.U
 
-        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(io.ControlUnit.bits.baseReq, currentDataWire), toSend)
+        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(baseReqUpdated, currentDataWire), toSend)
 
         currentRequest.bits := toSend
         currentRequest.valid := currentlyBeating

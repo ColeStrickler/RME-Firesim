@@ -80,13 +80,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
-    
-
-    for (i <- 0 until nClients)
-    {
-      val config = Wire(RMEConfigPortIO())
+    val config = Wire(RMEConfigPortIO())
      // Registers
-        val r_RowSize = RegInit(0.U(32.W))
+        val r_RowSize = RegInit(64.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
         val r_ColumnWidths = RegInit(0.U(6.W))
@@ -95,35 +91,55 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_Reset = RegInit(false.B)
         val r_EnableRME = RegInit(false.B)
 
-    /*
-            Register next state assignment
-        */
-        when (r_Reset) // Synchronous High Reset
-        {
-            // r_Reset := false.B --> we will make software toggle the reset
-            r_EnableRME := false.B
-            r_RowSize := 0.U
-            r_RowCount := 0.U
-            r_EnabledColumnCount := 0.U
-            r_FrameOffset := 0.U
-            r_ColumnWidths := 0.U
-            for (i <- 0 until 15)
-            { 
-                r_ColumnOffsets(i) := 0.U
-            }
-        }
+      val mmio_Enable = Seq((0x00) -> Seq(RegField(r_EnableRME.getWidth, r_EnableRME, RegFieldDesc("enableRME", "enableRME"))))
+      val mmio_RowSize = Seq((0x10) -> Seq(RegField(r_RowSize.getWidth, r_RowSize, RegFieldDesc("RowSize", "RowSizeRME"))))
+      val mmio_RowCount = Seq((0x20) -> Seq(RegField(r_RowCount.getWidth, r_RowCount, RegFieldDesc("RowCount", "RowCountRME"))))
+      val mmio_EnabledColumnCount = Seq((0x30) -> Seq(RegField(r_EnabledColumnCount.getWidth, r_EnabledColumnCount, RegFieldDesc("EnabledColumnCount", "EnabledColumnCountRME"))))
+      val mmio_ColumnWidth = Seq((0x40) -> Seq(RegField(r_ColumnWidths.getWidth, r_ColumnWidths, RegFieldDesc(s"ColumnWidth", "ColumnWidth"))))
+      val mmio_ColumnOffsets = r_ColumnOffsets.zipWithIndex.map {case (reg, i) => 
+          (i * 0x10 + 0x48) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnOffset${i}", "ColumnOffset")))    
+      }
+      val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
+      val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
+      val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
+                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
+      val regmap = ctlnode.regmap(mmreg: _*)
+
+      config.RowSize := r_RowSize
+      config.RowCount := r_RowCount
+      config.EnabledColumnCount := r_EnabledColumnCount
+      config.FrameOffset := r_FrameOffset
+      config.ColumnWidths := r_ColumnWidths
+      config.Enabled := r_EnableRME
+
+      SynthesizePrintf("rowsize: %d\n", r_RowSize)
+      when (r_Reset) // Synchronous High Reset
+      {
+          // r_Reset := false.B --> we will make software toggle the reset
+          r_EnableRME := false.B
+          r_RowSize := 0.U
+          r_RowCount := 0.U
+          r_EnabledColumnCount := 0.U
+          r_FrameOffset := 0.U
+          r_ColumnWidths := 0.U
+          for (i <- 0 until 15)
+          { 
+              r_ColumnOffsets(i) := 0.U
+          }
+      }
+
+    for (i <- 0 until nClients)
+    {
+      
+
+
+        
 
 
 
         // Assign IO
 
-        config.RowSize := r_RowSize
-        config.RowCount := r_RowCount
-        config.EnabledColumnCount := r_EnabledColumnCount
-        config.FrameOffset := r_FrameOffset
-        config.ColumnWidths := r_ColumnWidths
-        config.Enabled := r_EnableRME
-
+        
         for (i <- 0 until r_ColumnOffsets.length)
         {
             config.ColumnOffsets(i) := r_ColumnOffsets(i)
@@ -138,19 +154,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       println("MAPPING RME CONTROL REGISTERS")
       // MMIO Register Mapping
-      val mmio_Enable = Seq((0x00) -> Seq(RegField(r_EnableRME.getWidth, r_EnableRME, RegFieldDesc("enableRME", "enableRME"))))
-      val mmio_RowSize = Seq((0x10) -> Seq(RegField(r_RowSize.getWidth, r_RowSize, RegFieldDesc("RowSize", "RowSizeRME"))))
-      val mmio_RowCount = Seq((0x20) -> Seq(RegField(r_RowCount.getWidth, r_RowCount, RegFieldDesc("RowCount", "RowCountRME"))))
-      val mmio_EnabledColumnCount = Seq((0x30) -> Seq(RegField(r_EnabledColumnCount.getWidth, r_EnabledColumnCount, RegFieldDesc("EnabledColumnCount", "EnabledColumnCountRME"))))
-      val mmio_ColumnWidth = Seq((0x40) -> Seq(RegField(r_ColumnWidths.getWidth, r_ColumnWidths, RegFieldDesc(s"ColumnWidth", "ColumnWidth"))))
-      val mmio_ColumnOffsets = r_ColumnOffsets.zipWithIndex.map {case (reg, i) => 
-          (i * 0x10 + 0x48) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"ColumnOffset${i}", "ColumnOffset")))    
-      }
-      val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
-      val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
-      val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
-                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
-      val regmap = ctlnode.regmap(mmreg: _*)
+      
 
 
 

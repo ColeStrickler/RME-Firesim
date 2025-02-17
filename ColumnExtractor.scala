@@ -88,7 +88,7 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     // send in correct number bits to packer
     io.Packer.bits.dataIn := Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
-    io.Packer.bits.dataSize := 16.U
+    io.Packer.bits.dataSize := 8.U
     io.Packer.valid := hasValidLine
     io.Packer.bits.descriptorIn := io.DescriptorIn
 }

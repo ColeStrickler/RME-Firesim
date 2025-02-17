@@ -104,18 +104,18 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
 
 
-        val nDescriptors = RegInit(0.U)
+        val nDescriptors = RegInit(0.U(8.W))
         nDescriptors := 64.U/io.Config.ColumnWidths
         val requestOffset = (baseRequest.address - params.rmeaddress.U)
         val requestRow = requestOffset - (requestOffset % io.Config.RowSize)
         val row = RegInit(0.U(log2Ceil(params.rmeAddressSize).W))
         row := requestRow
-        val nDescriptorsSent = RegInit(0.U)
+        val nDescriptorsSent = RegInit(0.U(8.W))
         val col = RegInit(0.U(log2Ceil(512 + 1).W))
         val sumOffset = RegInit(0.U(log2Ceil(512 + 1).W))
-        val busWidth = 8.U
+        val busWidth = 8.U(7.W)
 
-              /* 
+        /* 
             Defaults
         */
         stateReg := stateReg
@@ -131,9 +131,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
          // this will need to be handled differently once we have multiple valuable data in a single cache line
         io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
+        io.FetchUnit.bits.descriptor.discardBack := 0.U
+        io.FetchUnit.bits.descriptor.discardFront := 0.U
 
         io.FetchUnit.bits.isBaseRequest := false.B
-        readyNextReq := ModifiedRequestsSent
+        readyNextReq := stateReg === idle
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
 
 
@@ -152,25 +154,27 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 col := 0.U
                 sumOffset := 0.U
                 row := requestRow
-                stateReg := Mux(io.Trapper.Request.fire, active, idle)
+                stateReg := Mux(requestQueue.io.deq.fire, active, idle)
+                baseRequest := requestQueue.io.deq.bits
             }
             is (active)
             {
-
+                SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
                 val last = col === io.Config.EnabledColumnCount - 1.U
                 val done = last && io.FetchUnit.fire
                 val P_i_j = (io.Config.RowSize * row) + (sumOffset + io.Config.ColumnOffsets(col))
-                val R_i_j = (P_i_j / busWidth) % busWidth
-                val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, busWidth)
+                SynthesizePrintf("[REQUESTOR] baseRequest.address 0x%x\n", baseRequest.address)
+                val R_i_j = (P_i_j / 8.U(60.W)) * busWidth
+                val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
                 val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = P_i_j % busWidth
                 val discardBack = (P_i_j + io.Config.ColumnWidths) % busWidth
 
                 val sendRequest = Wire(Valid(new TLBundleA(tlInParams)))
                 sendRequest.bits := baseRequest
-                sendRequest.bits.address := R_i_j
+                sendRequest.bits.address := R_i_j + params.rmeaddress.U
                 sendRequest.bits.size := sizeField
-                sendRequest.valid == true.B // i think since we switch states we can always set this valid
+                sendRequest.valid := true.B // i think since we switch states we can always set this valid
                 
 
                 id_allocator.io.newID.ready := io.FetchUnit.ready // we should then fire, claim id and advance
@@ -191,18 +195,15 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 when (io.FetchUnit.fire)
                 {
                     SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack\n", nBeats, discardFront, discardBack)
+                    SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
+                    SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
 
-
-
-
-
-
+                nDescriptorsSent := nDescriptorsSent + io.FetchUnit.fire
                 sumOffset := Mux(io.FetchUnit.fire, sumOffset + io.Config.ColumnOffsets(col), sumOffset)
                 col := Mux(io.FetchUnit.fire, Mux(last, 0.U, col + 1.U), col)
                 row := Mux(done, row + 1.U, row)
-                stateReg := Mux(done, idle, stateReg)
+                stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && io.FetchUnit.fire, idle, stateReg)
             }
         }
         
