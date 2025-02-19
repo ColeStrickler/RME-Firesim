@@ -82,7 +82,9 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         val BaseReq = Reg(new TLBundleA(tlParams))
         val ColExtractor = Module(new ColumnExtractor(maxID))
         val packer = Module(new PackerRME(maxID))
+        val descriptor = Reg(new RequestDescriptor(maxID))
 
+        descriptor := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.descriptor, descriptor)
 
         ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
         ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.fire
@@ -99,6 +101,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
         packer.io.ColExtractor <> ColExtractor.io.Packer
         io.TrapperPort.bits.baseReq := BaseReq
+        //io.TrapperPort.bits.baseReq.source := descriptor.baseID
+         
         io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
         io.TrapperPort.valid := packer.io.PackedLine.valid
         packer.io.PackedLine.ready := io.TrapperPort.ready

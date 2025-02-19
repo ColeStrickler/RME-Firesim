@@ -67,9 +67,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     val io = IO(new FetchUnitIO(tlInEdge.bundle, tlOutParams, maxID)).suggestName(s"fetchunitio_$instance-$subInstance")
 
 
+        val fetchReq = Reg(new TLBundleA(tlOutParams))
         val baseReq = Reg(new TLBundleA(tlOutParams))
         val descriptor = Reg(new RequestDescriptor(maxID))
-        baseReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
+        fetchReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, fetchReq)
+        baseReq :=  Mux( io.Requestor.fire, io.Requestor.bits.BaseReq, baseReq)
         //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         //when(io.OutReq.fire)
@@ -85,7 +87,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         when (io.ControlUnit.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x\n", instance.U, subInstance.U, baseReq.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x\n", instance.U, subInstance.U, fetchReq.address)
         }
 
 

@@ -34,7 +34,7 @@ case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
 case class RequestorFetchUnitPort(params: TLBundleParameters, maxID: Int) extends Bundle
 {
     val FetchReq = Output(new TLBundleA(params))
-    val isBaseRequest = Output(Bool())
+    val BaseReq = Output(new TLBundleA(params))
     val descriptor = Output(new RequestDescriptor(maxID))
 }
 
@@ -126,6 +126,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
+        io.FetchUnit.bits.BaseReq := baseRequest
         //io.FetchUnit.bits.FetchReq.size := log2Ceil(16).U // size is log2(opsize)
         io.FetchUnit.bits.descriptor.baseID := baseRequest.source
         io.FetchUnit.bits.descriptor.allocID := id_allocator.io.newID.bits
@@ -136,7 +137,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.bits.descriptor.discardFront := 0.U
         io.FetchUnit.bits.descriptor.beatCount := 0.U
 
-        io.FetchUnit.bits.isBaseRequest := false.B
+        
         readyNextReq := stateReg === idle
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
 
@@ -191,9 +192,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 io.FetchUnit.bits.FetchReq := sendRequest.bits
                 io.FetchUnit.bits.descriptor := descriptorOut
-                io.FetchUnit.bits.isBaseRequest := false.B
+                io.FetchUnit.bits.BaseReq := baseRequest
                 io.FetchUnit.valid :=  sendRequest.valid && id_allocator.io.newID.fire
-
+                
 
                 when (io.FetchUnit.fire)
                 {

@@ -55,10 +55,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         SynthesizePrintf("[TRAPPER] ==> request in 0x%x\n", io.TLInA.bits.address)
     }
 
-    when (io.TLInD.fire)
-    {
-        SynthesizePrintf("[TRAPPER] ==> sent reply with data: 0x%x\n", currentDataWire)
-    }
+   
         // io.Requestor.Request.ready %d, io.Requestor.Request.valid %d\n", io.Requestor.Request.ready, io.Requestor.Request.valid)
         //SynthesizePrintf("[TRAPPER] ==> io.TLInD.ready %d, io.TLInD.valid %d\n", io.TLInD.ready, io.TLInD.valid)
     
@@ -86,7 +83,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         val DataWidth = tlInParams.dataBits
 
         
-        
+         
 
 
         println("TLBundleD size bits %d\n", tlInParams.sizeBits)
@@ -97,9 +94,8 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         val toSend = Reg(new TLBundleD(tlInParams))
         val currentDataWire = WireInit(0.U(DataWidth.W))
         currentDataWire := replyCacheLine(DataWidth-1, 0) // get data
-        
-
         replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, Mux(io.TLInD.fire, replyCacheLine >> DataWidth, replyCacheLine))
+        
         replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
         io.ControlUnit.ready := !currentlyBeating
 
@@ -115,15 +111,20 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
        // since we modify the size to be bus width granularity, we set it back here
         val baseReqUpdated = Wire(new TLBundleA(tlInParams))
-        baseReqUpdated := io.ControlUnit.bits.baseReq
+        baseReqUpdated := replyToBaseReq
         baseReqUpdated.size := 6.U
-
-        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(baseReqUpdated, currentDataWire), toSend)
-
-        currentRequest.bits := toSend
-        currentRequest.valid := currentlyBeating
         
 
+        toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, currentDataWire), toSend)
+
+        currentRequest.bits := tlInEdge.AccessAck(replyToBaseReq, currentDataWire)
+        currentRequest.valid := currentlyBeating
+        
+        when (io.TLInD.fire)
+        {
+            SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
+            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x\n", baseReqUpdated.address, currentRequest.bits.data)
+        }
         
         io.TLInD <> currentRequest
 
