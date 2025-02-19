@@ -207,7 +207,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 }
 
                 nDescriptorsSent := nDescriptorsSent + io.FetchUnit.fire
-                sumOffset := Mux(io.FetchUnit.fire, sumOffset + io.Config.ColumnOffsets(col), sumOffset)
+                sumOffset := Mux(io.FetchUnit.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
                 col := Mux(io.FetchUnit.fire, Mux(last, 0.U, col + 1.U), col)
                 row := Mux(done, row + 1.U, row)
                 stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && io.FetchUnit.fire, idle, stateReg)
