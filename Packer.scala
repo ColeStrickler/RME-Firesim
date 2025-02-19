@@ -47,18 +47,18 @@ class PackerRME(maxID: Int) extends Module {
 
     when (io.ColExtractor.fire)
     {
-        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, num packed %d\n", io.ColExtractor.bits.dataIn, NumPackedBytes)
+        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
     }
 
     /*
         We will need to handle cases when the data doesn't exactly add up to 64bytes eventually --> actually no, we relax this constraint
     */
-    val colWidthBits = 16*8
-    val startBit : UInt = colWidthBits.U*io.ColExtractor.bits.descriptorIn.requestPlacement // double check
+    val colWidthBits = DataSize*8.U
+    val startBit : UInt = (colWidthBits*io.ColExtractor.bits.descriptorIn.requestPlacement)(11, 0) // double check
     // will need more logic for multi-column descriptors
 
-
-    val mask = ((BigInt(1) << colWidthBits) - 1).U << (startBit)
+    println("startBit.getWidth %d\n", startBit.getWidth)
+    val mask = (((1.U(64.W) << colWidthBits) - 1.U) << (startBit))(511, 0)
 
     when (newDataIn)
     {
@@ -70,34 +70,56 @@ class PackerRME(maxID: Int) extends Module {
         {
             is (1.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-7), (packedLine >> (dataInSizeBits))(511-8, 0))
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-7) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 1.U
             }
             is (2.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-15), (packedLine >> (dataInSizeBits))(511-16, 0))
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-15) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 2.U
             }
             is(4.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-31), (packedLine >> (dataInSizeBits))(511-32, 0))
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-31) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 4.U
             }
             is (8.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-63), (packedLine >> (dataInSizeBits))(511-64, 0))
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-63) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
+                SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
+                SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
+                SynthesizePrintf("\nwrite Data: 0x%x\n", writeData)
+                SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
+                SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 8.U
             }
             is (16.U)
             {
-                val writeData = io.ColExtractor.bits.dataIn(511, 511-127) << startBit
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-127) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
                 //packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
                 NumPackedBytes := NumPackedBytes + 16.U
             }
             is (32.U)
             {
-                packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-255), (packedLine >> (dataInSizeBits))(511-256, 0))
+                val extractedData = io.ColExtractor.bits.dataIn(511, 511-255) 
+                val extendedData = extractedData.pad(512)
+                val writeData = (extendedData << startBit)(511, 0)
+                packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 32.U
             }
             is (64.U)
@@ -111,7 +133,7 @@ class PackerRME(maxID: Int) extends Module {
 
 
     // willOverFlow gets set when the next value would overflow the cacheline
-    io.PackedLine.valid := (NumPackedBytes === 64.U)  || willOverflow
+    io.PackedLine.valid := (NumPackedBytes === 64.U)  //|| willOverflow
     io.PackedLine.bits := packedLine
         
 
@@ -119,6 +141,7 @@ class PackerRME(maxID: Int) extends Module {
     {
         NumPackedBytes := 0.U  
         SynthesizePrintf("io.PackedLine.fire NumPackedBytes %d, willOverflow %d\n", NumPackedBytes, willOverflow)
+        SynthesizePrintf("io.PackedLine.fire, Packed line 0x%x\n", packedLine)
     }
 
 

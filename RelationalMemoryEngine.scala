@@ -82,7 +82,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     println(s"Number of edges into RME: $nClients\n")
     val config = Wire(RMEConfigPortIO())
      // Registers
-        val r_RowSize = RegInit(64.U(32.W))
+        val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
         val r_ColumnWidths = RegInit(0.U(6.W))
@@ -112,7 +112,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       config.ColumnWidths := r_ColumnWidths
       config.Enabled := r_EnableRME
 
-      SynthesizePrintf("rowsize: %d\n", r_RowSize)
+      //SynthesizePrintf("rowsize: %d\n", r_RowSize)
       when (r_Reset) // Synchronous High Reset
       {
           // r_Reset := false.B --> we will make software toggle the reset
@@ -217,7 +217,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //{
       //  SynthesizePrintf("in.d.fire\n")
       //}
-//
+
       //when (out.a.fire)
       //{
       //  SynthesizePrintf("out.a.fire\n")

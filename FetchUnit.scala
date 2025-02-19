@@ -72,15 +72,15 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         baseReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
-        when(io.OutReq.fire)
-        {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d size: %d, address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, io.OutReq.bits.size, io.OutReq.bits.address)
-        }
+        //when(io.OutReq.fire)
+        //{
+        //    SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d size: %d, address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, io.OutReq.bits.size, io.OutReq.bits.address)
+        //}
 
-        when (io.inReply.fire)
-        {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
-        }
+        //when (io.inReply.fire)
+        //{
+        //    SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
+        //}
 
 
         when (io.ControlUnit.fire)
@@ -133,10 +133,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)(511-dataWidth, 0)), dataReg)
-        //when (io.inReply.fire)
-        //{
-        //    SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
-        //}
+        when (io.inReply.fire)
+        {
+            SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
+        }
 
         /*
             if (done receiving data)
