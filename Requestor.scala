@@ -107,8 +107,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         val nDescriptors = RegInit(0.U(8.W))
         nDescriptors := 64.U/io.Config.ColumnWidths
-        val requestOffset = (baseRequest.address - params.rmeaddress.U)
-        val requestRow = requestOffset - (requestOffset % io.Config.RowSize)
+        val requestOffset = (requestQueue.io.deq.bits.address - params.rmeaddress.U)
+        val requestRow = requestOffset / io.Config.RowSize.pad(33)//(requestOffset - (requestOffset % io.Config.RowSize))
         val row = RegInit(0.U(log2Ceil(params.rmeAddressSize).W))
         row := requestRow
         val nDescriptorsSent = RegInit(0.U(8.W))
@@ -162,7 +162,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             }
             is (active)
             {
-                //SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
+                SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
+                
+                
+                
                 val last = col === io.Config.EnabledColumnCount - 1.U
                 val done = last && io.FetchUnit.fire
                 val P_i_j = (io.Config.RowSize * row) + (sumOffset + io.Config.ColumnOffsets(col))
@@ -198,7 +201,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.FetchUnit.fire)
                 {
-                    //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
+                    SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
