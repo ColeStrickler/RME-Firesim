@@ -132,11 +132,6 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     {
       
 
-
-        
-
-
-
         // Assign IO
 
         
@@ -155,13 +150,6 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       println("MAPPING RME CONTROL REGISTERS")
       // MMIO Register Mapping
       
-
-
-
-
-
-
-
       val (out, out_edge) = node.out(i)
       val (in, in_edge) = node.in(i)
       val outParams = out_edge.bundle
@@ -195,11 +183,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         Input and output of RME
       */
       val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
-      val isWritebackToRME = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.PutFullData || in.a.bits.opcode === TLMessages.PutPartialData)
+      val isWritebackToRME = ToRME(in.a.bits.address) && !(in.a.bits.opcode === TLMessages.Get)
       val demux = Module(new ConditionalDemuxA(in_edge.bundle))
       demux.io.dataIn <> in.a
-      demux.io.sel := isRMERequest
-      demux.io.isWriteback := isWritebackToRME && config.Enabled
+      demux.io.sel := isRMERequest && !isWritebackToRME 
+      demux.io.isWriteback := false.B //isWritebackToRME && config.Enabled
       trapper.io.TLInA <> demux.io.outB
       //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       

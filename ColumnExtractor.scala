@@ -87,10 +87,10 @@ class ColumnExtractor(maxID: Int) extends Module {
     val tmpWire2 = WireInit(0.U(512.W))
     val tmpWire3 = WireInit(0.U(512.W))
     //io.DataSizeOut := 16.U
-    val TotalSize = (io.DescriptorIn.beatCount*64.U) // (8bytes/beat)(8bits/byte)
-    val DataSize = TotalSize - (io.DescriptorIn.discardFront*8.U) - (io.DescriptorIn.discardBack*8.U)
-    val StartIndex = io.DescriptorIn.discardFront*8.U
-    val EndIndex = TotalSize - (io.DescriptorIn.discardBack*8.U)
+    val TotalSize = (tmpDescriptor.beatCount*8.U) // (8bytes/beat)
+    val DataSize = TotalSize - (tmpDescriptor.discardFront) - (tmpDescriptor.discardBack)
+    val StartIndex = tmpDescriptor.discardFront*8.U
+    val EndIndex = TotalSize - (tmpDescriptor.discardBack*8.U)
     val ShiftAmount = 512.U - TotalSize
     tmpWire2 := (tmpWire >> ShiftAmount)
     val ExtractedData = (tmpWire2 >> StartIndex) & ((1.U << (EndIndex - StartIndex)) - 1.U)
@@ -101,15 +101,17 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     when (io.Packer.fire)
     {
-        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d\n", DataSize)
+        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, io.DescriptorIn.discardFront, io.DescriptorIn.discardBack)
         SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
         SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0%x\n", ExtractedData)
         SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
     }
+
+    
    
     // send in correct number bits to packer
     io.Packer.bits.dataIn := OutputData//Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
-    io.Packer.bits.dataSize := (io.DescriptorIn.beatCount*8.U) - io.DescriptorIn.discardFront - io.DescriptorIn.discardBack
+    io.Packer.bits.dataSize := DataSize//(io.DescriptorIn.beatCount*8.U) - io.DescriptorIn.discardFront - io.DescriptorIn.discardBack
     io.Packer.valid := hasValidLine
     io.Packer.bits.descriptorIn := tmpDescriptor
 }

@@ -209,8 +209,9 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
     readyOther := io.outA.ready
     
   }.otherwise {
+    
+
     io.outA <> io.dataIn
-    io.outA.valid := (!io.isWriteback && io.dataIn.valid) // we want to ignore writebacks
     io.outB.bits := dummyMessage
     io.outB.valid := false.B
     readyOther := io.outB.ready

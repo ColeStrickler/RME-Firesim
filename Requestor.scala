@@ -104,13 +104,13 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val TotalCacheLinesSent = RegInit(0.U(4.W))
 
 
-
+        val sumColWidths = (io.Config.ColumnWidths*io.Config.EnabledColumnCount).pad(32)
         val nDescriptors = RegInit(0.U(8.W))
         nDescriptors := 64.U/io.Config.ColumnWidths
-        val requestOffset = (requestQueue.io.deq.bits.address - params.rmeaddress.U)
-        val requestRow = requestOffset / io.Config.RowSize.pad(33)//(requestOffset - (requestOffset % io.Config.RowSize))
+        val requestOffset = (requestQueue.io.deq.bits.address - params.rmeaddress.U)(31, 0)
+        val requestRow = requestOffset / sumColWidths//requestOffset / io.Config.RowSize.pad(33)//(requestOffset - (requestOffset % io.Config.RowSize))
         val row = RegInit(0.U(log2Ceil(params.rmeAddressSize).W))
-        row := requestRow
+        //row := requestRow
         val nDescriptorsSent = RegInit(0.U(8.W))
         val col = RegInit(0.U(log2Ceil(512 + 1).W))
         val sumOffset = RegInit(0.U(log2Ceil(512 + 1).W))
@@ -148,6 +148,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         id_allocator.io.newID.ready := false.B
 
 
+        when (requestQueue.io.deq.fire)
+        {
+            SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
+        }
 
         switch(stateReg)
         {
@@ -163,7 +167,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             is (active)
             {
                 SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
-                
                 
                 
                 val last = col === io.Config.EnabledColumnCount - 1.U
@@ -191,7 +194,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 descriptorOut.discardFront := discardFront
                 descriptorOut.discardBack := discardBack
                 descriptorOut.beatCount := nBeats
-
+                assert(nBeats > 0.U && nBeats <= 5.U);
 
                 io.FetchUnit.bits.FetchReq := sendRequest.bits
                 io.FetchUnit.bits.descriptor := descriptorOut
@@ -202,6 +205,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 when (io.FetchUnit.fire)
                 {
                     SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
+                    SynthesizePrintf("REQUESTOR nBeats %d\n", nBeats)
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
