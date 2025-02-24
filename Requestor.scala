@@ -84,7 +84,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         */
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
-        val requestQueue = Module(new Queue(new TLBundleA(tlInParams), 16, flow=false))
+        val requestQueue = Module(new Queue(new TLBundleA(tlInParams), 16, flow=true))
         val baseRequest = Reg(new TLBundleA(tlOutParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = RegInit(true.B)
@@ -177,7 +177,15 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
                 val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = P_i_j % busWidth
-                val discardBack = (P_i_j + io.Config.ColumnWidths) % busWidth
+
+
+                /*
+                    We altered this from the EDBT paper
+
+                    This needs edited -> causing freeze with multi-column
+                */
+                val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
+                val discardBack = (R_i_j + busWidth - io.Config.ColumnWidths) % busWidth//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
 
                 val sendRequest = Wire(Valid(new TLBundleA(tlInParams)))
                 sendRequest.bits := baseRequest
