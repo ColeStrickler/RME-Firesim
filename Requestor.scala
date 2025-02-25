@@ -185,7 +185,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     This needs edited -> causing freeze with multi-column
                 */
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
-                val discardBack = (R_i_j + busWidth - io.Config.ColumnWidths) % busWidth//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
+                val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
 
                 val sendRequest = Wire(Valid(new TLBundleA(tlInParams)))
                 sendRequest.bits := baseRequest
