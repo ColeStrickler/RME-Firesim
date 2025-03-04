@@ -76,7 +76,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d size: %d, address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, io.OutReq.bits.size, io.OutReq.bits.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
         }
 
         //when (io.inReply.fire)
@@ -87,7 +87,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         when (io.ControlUnit.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x\n", instance.U, subInstance.U, fetchReq.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x, 0x%x\n", instance.U, subInstance.U, baseReq.address, fetchReq.address)
         }
 
 
@@ -123,7 +123,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         */
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
 
-        val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
+        val dataReg = RegInit(0.U(256.W)) // store a single cache line we get from DRAM
         val dataRegFull = RegInit(false.B)
         val receivedAllData = RegInit(true.B)
         val corrupt = RegInit(false.B)
@@ -134,7 +134,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         val shiftNewData = io.inReply.bits.data //+ d_count // count is to test
         
         // we have to splice the data after shift because zeroes are put in the top
-        dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)(511-dataWidth, 0)), dataReg)
+        dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
         when (io.inReply.fire)
         {
             SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
@@ -153,7 +153,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
         io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
-        io.ControlUnit.bits.data := dataReg
+        io.ControlUnit.bits.data := dataReg.pad(512)
         io.ControlUnit.bits.descriptor := descriptor
   
         // we no longer have an active request when we send it to control unit

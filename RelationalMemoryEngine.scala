@@ -112,6 +112,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       config.ColumnWidths := r_ColumnWidths
       config.Enabled := r_EnableRME
 
+      for (i <- 0 until r_ColumnOffsets.length)
+      {
+          config.ColumnOffsets(i) := r_ColumnOffsets(i)
+      }
+
       //SynthesizePrintf("rowsize: %d\n", r_RowSize)
       when (r_Reset) // Synchronous High Reset
       {
@@ -135,10 +140,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         // Assign IO
 
         
-        for (i <- 0 until r_ColumnOffsets.length)
-        {
-            config.ColumnOffsets(i) := r_ColumnOffsets(i)
-        }
+       
 
         //when (r_EnableRME)
         //{

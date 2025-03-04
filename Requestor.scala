@@ -87,7 +87,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val requestQueue = Module(new Queue(new TLBundleA(tlInParams), 16, flow=true))
         val baseRequest = Reg(new TLBundleA(tlOutParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
-        val readyNextReq = RegInit(true.B)
+        val readyNextReq = Wire(Bool())
 
         // What happens if enabled column count changes while we're handling request? --> we can probably relax this assumption
         // I think this will lead to issues of incomplete request formation
@@ -151,6 +151,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         when (requestQueue.io.deq.fire)
         {
             SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
+            SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.address, stateReg)
+        
         }
 
         switch(stateReg)
@@ -213,7 +215,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 when (io.FetchUnit.fire)
                 {
                     SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("REQUESTOR nBeats %d\n", nBeats)
+                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
+                    
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
