@@ -47,7 +47,7 @@ class PackerRME(maxID: Int) extends Module {
 
     when (io.ColExtractor.fire)
     {
-        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
+        //SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
     }
 
     /*
@@ -97,11 +97,11 @@ class PackerRME(maxID: Int) extends Module {
                 val extractedData = io.ColExtractor.bits.dataIn(511, 511-63) 
                 val extendedData = extractedData.pad(512)
                 val writeData = (extendedData << startBit)(511, 0)
-                SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
-                SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
-                SynthesizePrintf("\nwrite Data: 0x%x\n", writeData)
-                SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
-                SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
+                //SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
+                //SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
+                //SynthesizePrintf("\nwrite Data: 0x%x\n", writeData)
+                //SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
+                //SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 8.U
             }
@@ -140,8 +140,8 @@ class PackerRME(maxID: Int) extends Module {
     when (io.PackedLine.fire)
     {
         NumPackedBytes := 0.U  
-        SynthesizePrintf("io.PackedLine.fire NumPackedBytes %d, willOverflow %d\n", NumPackedBytes, willOverflow)
-        SynthesizePrintf("io.PackedLine.fire, Packed line 0x%x\n", packedLine)
+        //SynthesizePrintf("io.PackedLine.fire NumPackedBytes %d, willOverflow %d\n", NumPackedBytes, willOverflow)
+        //SynthesizePrintf("io.PackedLine.fire, Packed line 0x%x\n", packedLine)
     }
 
 

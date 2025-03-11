@@ -150,8 +150,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         when (requestQueue.io.deq.fire)
         {
-            SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
-            SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.address, stateReg)
+            //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
+            //SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.address, stateReg)
         
         }
 
@@ -168,7 +168,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             }
             is (active)
             {
-                SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
+                //SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
                 
                 
                 val last = col === io.Config.EnabledColumnCount - 1.U
@@ -183,8 +183,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 /*
                     We altered this from the EDBT paper
-
-                    This needs edited -> causing freeze with multi-column
+   
+                    This needs edited -> causing freeze with multi-column 
                 */
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
                 val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
@@ -214,8 +214,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.FetchUnit.fire)
                 {
-                    SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
+                    //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
+                    //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)

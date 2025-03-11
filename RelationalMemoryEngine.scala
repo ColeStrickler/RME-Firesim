@@ -288,7 +288,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
 
       
-      
+         
 
       val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, maxID), params.nFetchUnits))
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))

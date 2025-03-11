@@ -122,7 +122,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         
         when (io.TLInD.fire)
         {
-            SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
+            //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
             SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x\n", baseReqUpdated.address, currentRequest.bits.data)
         }
         

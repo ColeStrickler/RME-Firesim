@@ -101,7 +101,7 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     when (io.Packer.fire)
     {
-        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, io.DescriptorIn.discardFront, io.DescriptorIn.discardBack)
+        //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, io.DescriptorIn.discardFront, io.DescriptorIn.discardBack)
         //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
         //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0%x\n", ExtractedData)
         //SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
