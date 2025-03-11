@@ -79,19 +79,19 @@ class ColumnExtractor(maxID: Int) extends Module {
     */
     //hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
     hasValidLine := io.CacheLineIn.fire
-    //when (io.CacheLineIn.fire)
-    //{
-    //    SynthesizePrintf("[ColumnExtractor] --> cache line in\n")
-    //}
+    when (io.CacheLineIn.fire)
+    {
+        SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
+    }
 
     val tmpWire2 = WireInit(0.U(512.W))
     val tmpWire3 = WireInit(0.U(512.W))
     //io.DataSizeOut := 16.U
     val TotalSize = (tmpDescriptor.beatCount*8.U) // (8bytes/beat)
     val DataSize = TotalSize - (tmpDescriptor.discardFront) - (tmpDescriptor.discardBack)
-    val StartIndex = tmpDescriptor.discardFront*8.U
-    val EndIndex = TotalSize - (tmpDescriptor.discardBack*8.U)
-    val ShiftAmount = 512.U - TotalSize
+    val StartIndex = tmpDescriptor.discardFront*8.U // convert bytes to bits
+    val EndIndex = (TotalSize*8.U) - (tmpDescriptor.discardBack*8.U) // convert bytes to bits
+    val ShiftAmount = 512.U - TotalSize*8.U // convert to bits
     tmpWire2 := (tmpWire >> ShiftAmount)
     val ExtractedData = (tmpWire2 >> StartIndex) & ((1.U << (EndIndex - StartIndex)) - 1.U)
     // Compute how much to shift left for alignment
@@ -101,14 +101,12 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     when (io.Packer.fire)
     {
-        //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, io.DescriptorIn.discardFront, io.DescriptorIn.discardBack)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0%x\n", ExtractedData)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
+        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
+        SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
+        SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
+        SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
     }
 
-    
-   
     // send in correct number bits to packer
     io.Packer.bits.dataIn := OutputData//Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
     io.Packer.bits.dataSize := DataSize//(io.DescriptorIn.beatCount*8.U) - io.DescriptorIn.discardFront - io.DescriptorIn.discardBack
