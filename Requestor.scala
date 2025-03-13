@@ -214,6 +214,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.FetchUnit.fire)
                 {
+                    assert(baseRequest.address >= params.rmeaddress.U && baseRequest.address <= params.rmeaddress.U + params.rmeAddressSize.U)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
                     SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     

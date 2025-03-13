@@ -81,7 +81,7 @@ class ColumnExtractor(maxID: Int) extends Module {
     hasValidLine := io.CacheLineIn.fire
     when (io.CacheLineIn.fire)
     {
-        SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
+       // SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
     }
 
     val tmpWire2 = WireInit(0.U(512.W))
@@ -101,10 +101,10 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     when (io.Packer.fire)
     {
-        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
-        SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
-        SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
-        SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
+        //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
+        //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
+        //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
+        //SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
     }
 
     // send in correct number bits to packer
