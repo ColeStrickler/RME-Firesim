@@ -76,13 +76,13 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
         }
 
-        //when (io.inReply.fire)
-        //{
-        //    SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
-        //}
+        when (io.inReply.fire)
+        {
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
+        }
 
 
         when (io.ControlUnit.fire)

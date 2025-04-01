@@ -85,6 +85,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(new TLBundleA(tlInParams), 16, flow=true))
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, maxID), 64, flow=true)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlOutParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
@@ -148,6 +149,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         id_allocator.io.newID.ready := false.B
 
 
+        outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(tlInParams, maxID))
+        outQueue.io.enq.valid := false.B
+
+        io.FetchUnit <> outQueue.io.deq
+        
         when (requestQueue.io.deq.fire)
         {
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
@@ -165,6 +171,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 row := requestRow
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
                 baseRequest := requestQueue.io.deq.bits
+
+                
+
             }
             is (active)
             {
@@ -172,7 +181,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 
                 
                 val last = col === io.Config.EnabledColumnCount - 1.U
-                val done = last && io.FetchUnit.fire
+                val done = last && outQueue.io.enq.fire
                 val P_i_j = (io.Config.RowSize * row) + (sumOffset + io.Config.ColumnOffsets(col))
                 //SynthesizePrintf("[REQUESTOR] baseRequest.address 0x%x\n", baseRequest.address)
                 val R_i_j = (P_i_j / 8.U(60.W)) * busWidth
@@ -206,27 +215,27 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 descriptorOut.beatCount := nBeats
                 assert(nBeats > 0.U && nBeats <= 5.U);
 
-                io.FetchUnit.bits.FetchReq := sendRequest.bits
-                io.FetchUnit.bits.descriptor := descriptorOut
-                io.FetchUnit.bits.BaseReq := baseRequest
-                io.FetchUnit.valid :=  sendRequest.valid && id_allocator.io.newID.fire
+                outQueue.io.enq.bits.FetchReq := sendRequest.bits
+                outQueue.io.enq.bits.descriptor := descriptorOut
+                outQueue.io.enq.bits.BaseReq := baseRequest
+                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire
                 
 
-                when (io.FetchUnit.fire)
+                when (outQueue.io.enq.fire)
                 {
                     assert(baseRequest.address >= params.rmeaddress.U && baseRequest.address <= params.rmeaddress.U + params.rmeAddressSize.U)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
+                    //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
 
-                nDescriptorsSent := nDescriptorsSent + io.FetchUnit.fire
-                sumOffset := Mux(io.FetchUnit.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
-                col := Mux(io.FetchUnit.fire, Mux(last, 0.U, col + 1.U), col)
+                nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
+                sumOffset := Mux(outQueue.io.enq.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
+                col := Mux(outQueue.io.enq.fire, Mux(last, 0.U, col + 1.U), col)
                 row := Mux(done, row + 1.U, row)
-                stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && io.FetchUnit.fire, idle, stateReg)
+                stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && outQueue.io.enq.fire, idle, stateReg)
             }
         }
         

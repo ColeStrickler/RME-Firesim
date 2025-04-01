@@ -94,6 +94,12 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         // we modified this, and think this should work.if currently packing a line, we need to wait to pack the whole thing
         // we can add more packers eventually and arbitrate over the trapper port
         currentlyPacking := Mux(currentlyPacking, !io.TrapperPort.fire, io.FetchUnitPort.fire)
+        /*
+            Potential bottle neck?
+        */
+
+
+
         io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
 
 

@@ -45,7 +45,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
     
     }
-
+    
     /*
       We need this to reserve an address range in the device tree 
       -> This required modifications to the device tree generation. See RocketChip fork
@@ -55,7 +55,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     }
     
   val node = TLAdapterNode()
+    
 
+  
 
 
     def ToRME(addr : UInt) : Bool = {
