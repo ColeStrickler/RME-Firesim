@@ -29,6 +29,7 @@ case class RelMemParams (
     MetadataSPMSize : Int = 1024,
     nFetchUnits : Int = 4,
     inBoundXbar : Option[TLXbar] = None,
+    withPerfCounter : Boolean = true,
     //minSource : Int = 16
 )
 
@@ -57,7 +58,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   val node = TLAdapterNode()
     
 
-  
+
 
 
     def ToRME(addr : UInt) : Bool = {
@@ -93,6 +94,29 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_Reset = RegInit(false.B)
         val r_EnableRME = RegInit(false.B)
 
+
+
+        val r_FetchFullStall =      if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+        val r_FetchToCtrlStall =    if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+        val r_FetchToMemoryStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+        val r_CtrlToTrapperStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+        val r_ReqToFetchStall =     if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+
+        val perfCounters =  if (params.withPerfCounter) {
+        
+          val stall_fetch_full = Seq((0xf00) -> Seq(RegField(r_FetchFullStall.get.getWidth, r_FetchFullStall.get, RegFieldDesc("FetchFullStall", "FetchFullStall"))))
+          val stall_fetchToControl = Seq((0xf08) -> Seq(RegField(r_FetchToCtrlStall.get.getWidth, r_FetchToCtrlStall.get, RegFieldDesc("FetchToCtrlStall", "FetchToCtrlStall"))))
+          val stall_fetchToMemory = Seq((0xf18) -> Seq(RegField(r_FetchToMemoryStall.get.getWidth, r_FetchToMemoryStall.get, RegFieldDesc("FetchToMemoryStall", "FetchToMemoryStall"))))
+          val stall_CtrlToTrapper = Seq((0xf20) -> Seq(RegField(r_CtrlToTrapperStall.get.getWidth, r_CtrlToTrapperStall.get, RegFieldDesc("CtrlToTrapperStall", "CtrlToTrapperStall"))))
+          val stall_reqToFetch = Seq((0xf28) -> Seq(RegField(r_ReqToFetchStall.get.getWidth, r_ReqToFetchStall.get, RegFieldDesc("ReqToFetchStall", "ReqToFetchStall"))))
+          val ret = stall_fetch_full ++ stall_fetchToControl ++ stall_fetchToMemory ++ stall_CtrlToTrapper ++ stall_reqToFetch
+          ret
+        }
+        else {
+          Seq()
+        }
+                
+
       val mmio_Enable = Seq((0x00) -> Seq(RegField(r_EnableRME.getWidth, r_EnableRME, RegFieldDesc("enableRME", "enableRME"))))
       val mmio_RowSize = Seq((0x10) -> Seq(RegField(r_RowSize.getWidth, r_RowSize, RegFieldDesc("RowSize", "RowSizeRME"))))
       val mmio_RowCount = Seq((0x20) -> Seq(RegField(r_RowCount.getWidth, r_RowCount, RegFieldDesc("RowCount", "RowCountRME"))))
@@ -103,8 +127,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
       val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
+
+
+     
       val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
-                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset
+                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters
       val regmap = ctlnode.regmap(mmreg: _*)
 
       config.RowSize := r_RowSize
@@ -268,13 +295,19 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         FetchUnit(s)/Requestor connection
       */
       val ohFetchUnitsReady = PriorityEncoderOH(fetch_units.map(fetch_unit => fetch_unit.Requestor.ready))
-      requestor.io.FetchUnit.ready := ohFetchUnitsReady.reduce(_||_) // this should fire to the right one
+      val fetchUnitReady = ohFetchUnitsReady.reduce(_||_) 
+      
+      requestor.io.FetchUnit.ready := fetchUnitReady // this should fire to the right one
       for (n <- 0 until fetch_units.length)
       {
           val fetch_unit = fetch_units(n)
           fetch_unit.Requestor.valid := ohFetchUnitsReady(n) && requestor.io.FetchUnit.valid
           fetch_unit.Requestor.bits := requestor.io.FetchUnit.bits
+      }
 
+      if (params.withPerfCounter) {
+        val fetchUnitsFullStall = requestor.io.FetchUnit.valid  && !fetchUnitReady
+        r_FetchFullStall.get := r_FetchFullStall.get + fetchUnitsFullStall
       }
 
       //val fetch_units_req_arb = Module(new RRArbiter(new RequestorFetchUnitPort(inParams), params.nFetchUnits))
