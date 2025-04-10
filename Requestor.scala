@@ -152,7 +152,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(tlInParams, maxID))
         outQueue.io.enq.valid := false.B
 
-        io.FetchUnit <> outQueue.io.deq
+        io.FetchUnit.bits := outQueue.io.deq.bits
+        io.FetchUnit.valid := outQueue.io.deq.valid
+        outQueue.io.deq.ready := io.FetchUnit.ready
+        
         
         when (requestQueue.io.deq.fire)
         {
@@ -205,7 +208,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.valid := true.B // i think since we switch states we can always set this valid
                 
 
-                id_allocator.io.newID.ready := io.FetchUnit.ready // we should then fire, claim id and advance
+                id_allocator.io.newID.ready := outQueue.io.enq.ready // we should then fire, claim id and advance
                 val descriptorOut = Wire(RequestDescriptor(maxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.allocID := id_allocator.io.newID.bits
@@ -224,6 +227,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 when (outQueue.io.enq.fire)
                 {
                     assert(baseRequest.address >= params.rmeaddress.U && baseRequest.address <= params.rmeaddress.U + params.rmeAddressSize.U)
+                    SynthesizePrintf("outQueue.io.enq.fire %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
                     //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     
