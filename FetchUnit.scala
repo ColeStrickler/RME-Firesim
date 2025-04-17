@@ -47,6 +47,7 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
 }
 
 
+
 /* 
     I think we can have several of these, and overlap their latency
 
@@ -87,7 +88,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
 
         when (io.ControlUnit.fire)
         {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x, 0x%x\n", instance.U, subInstance.U, baseReq.address, fetchReq.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x, 0x%x\n", instance.U, subInstance.U, baseReq.address, fetchReq.address)
         }
 
 
@@ -155,6 +156,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
         io.ControlUnit.bits.descriptor := descriptor
+        when (dataRegFull)
+        {
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor src %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID)
+        }
   
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests

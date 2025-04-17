@@ -9,7 +9,7 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
-import org.apache.commons.compress.java.util.jar.Pack200.Packer
+
 
 
 
@@ -25,6 +25,7 @@ class PackerRME(maxID: Int) extends Module {
     val io = IO(new Bundle {
         val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(maxID)))
         val PackedLine = DecoupledIO(UInt(512.W))
+        val nPacked = Output(UInt(7.W))
     })
 
 
@@ -35,7 +36,7 @@ class PackerRME(maxID: Int) extends Module {
     val dataInSizeBits = io.ColExtractor.bits.dataSize * 8.U
 
     val NumPackedBytes = RegInit(0.U(7.W))
-
+    io.nPacked := NumPackedBytes
     val DataSize = io.ColExtractor.bits.dataSize
     val newDataIn = io.ColExtractor.fire
 

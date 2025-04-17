@@ -230,14 +230,14 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       
 
-
+  
       replyFromDRAMDemux.io.dataIn <> out.d
       //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
       
-
+   
       //when (in.a.fire)
       //{
-      //  SynthesizePrintf(s"in.a.fire ${in.a.fire}\n")
+      //  SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
       //}   
       //when (in.d.fire)
       //{
@@ -290,7 +290,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
         when (fetchToMemStall)
         {
-          SynthesizePrintf("fetchToMemStall\n")
+          //SynthesizePrintf("fetchToMemStall\n")
           r_FetchToMemoryStall.foreach{ reg=>
             reg := reg + 1.U
           }
@@ -315,7 +315,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val ctrlToTrapperStall = control_unit.io.TrapperPort.valid && !control_unit.io.TrapperPort.fire
         when (ctrlToTrapperStall)
         {
-          SynthesizePrintf("ctrlToTrapperStall\n")
+          //SynthesizePrintf("ctrlToTrapperStall\n")
           r_CtrlToTrapperStall.foreach{ reg =>
             reg := reg + 1.U
           }
@@ -347,7 +347,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val fetchUnitsFullStall = requestor.io.FetchUnit.valid  && !fetchUnitReady
         when (fetchUnitsFullStall)
         {
-          SynthesizePrintf("fetchUnitsFullStall %d\n", r_FetchFullStall.get)
+          //SynthesizePrintf("fetchUnitsFullStall %d\n", r_FetchFullStall.get)
           r_FetchFullStall.foreach{ reg =>
             reg := reg + 1.U
           }
@@ -370,14 +370,37 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       //fetch_unit.io.Requestor.valid := requestor.io.FetchUnit.valid
       //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
-
+      val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       
          
+      when (control_unit.io.useID)
+      {
+          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID && fu.valid)
+          val selectedIdx = PriorityEncoder(valids.asUInt)
 
-      val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, maxID), params.nFetchUnits))
-      val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
-      ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
-      control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
+
+
+
+          control_unit.io.FetchUnitPort.valid := fetch_unit_ctrl_io(selectedIdx).valid
+          control_unit.io.FetchUnitPort.bits  := fetch_unit_ctrl_io(selectedIdx).bits
+          for ((fu, i) <- fetch_unit_ctrl_io.zipWithIndex) {
+            fu.ready := (i.U === selectedIdx) && control_unit.io.FetchUnitPort.ready
+          }
+          //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
+      }
+      .otherwise
+      {
+          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, maxID), params.nFetchUnits))
+          ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
+          control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
+      }
+
+
+
+      
+      
+      
+      
       if (params.withPerfCounter)
       {
         val fetchToCtrlStall = fetch_units.map(fetch_unit => fetch_unit.ControlUnit.valid).reduce(_||_) && !control_unit.io.FetchUnitPort.fire
@@ -385,14 +408,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
         when (fetchToCtrlStall)
         {
-          SynthesizePrintf("fetchToCtrlStall\n")
+          //SynthesizePrintf("fetchToCtrlStall\n")
           r_FetchToCtrlStall.foreach{ reg =>
             reg :=  reg + 1.U
           }
         }
-
-
-        
       }
 
 

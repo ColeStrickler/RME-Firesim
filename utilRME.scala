@@ -21,6 +21,7 @@ import freechips.rocketchip.subsystem.Attachable
 
 
 
+
 class IDAllocator(minID : Int, maxID : Int) extends Module {
   val io = IO(new Bundle {
     val newID = Decoupled(UInt(log2Ceil(maxID).W))

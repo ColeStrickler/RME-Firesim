@@ -99,7 +99,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
         when (io.ControlUnit.fire)
         {
-            SynthesizePrintf("[TRAPPER] --> cache line from control unit. baseReq address: 0x%x\n", io.ControlUnit.bits.baseReq.address)
+           // SynthesizePrintf("[TRAPPER] --> cache line from control unit. baseReq address: 0x%x\n", io.ControlUnit.bits.baseReq.address)
         }
 
         currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)

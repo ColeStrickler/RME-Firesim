@@ -8,10 +8,6 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
-import org.apache.commons.compress.java.util.jar.Pack200.Packer
-import com.fasterxml.jackson.databind.JsonSerializable.Base
-
-
 
 
 
@@ -43,7 +39,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
         // Fetch Unit Port
         val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlOutEdge.bundle, maxID)))
-
+        val ID = Output(UInt(tlParams.sourceBits.W))
+        val useID = Output(Bool())
 
         // Trapper Port
         val TrapperPort = DecoupledIO(ControlUnitTrapperPort(tlParams))
@@ -84,6 +81,19 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         val packer = Module(new PackerRME(maxID))
         val descriptor = Reg(new RequestDescriptor(maxID))
 
+
+
+        io.ID := BaseReq.source
+        io.useID := currentlyPacking
+
+        when (currentlyPacking)
+        {
+            SynthesizePrintf("packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
+            SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
+            SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
+        }
+
+
         descriptor := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.descriptor, descriptor)
 
         ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
@@ -101,7 +111,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
-
+        
 
         // this should fire after we get an entire cache line
         BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly

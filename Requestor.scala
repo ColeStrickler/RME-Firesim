@@ -229,10 +229,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     assert(baseRequest.address >= params.rmeaddress.U && baseRequest.address <= params.rmeaddress.U + params.rmeAddressSize.U)
                     SynthesizePrintf("outQueue.io.enq.fire %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
-                    
-                    //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
-                    //SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
+                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
+                    SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
+                    SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                 }
 
                 nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
