@@ -35,7 +35,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
     val io = IO(new Bundle{
         // Config Port 
         //val Config = Input(RMEConfigPortIO())
-
+        val clk = Input(Bool())
 
         // Fetch Unit Port
         val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlOutEdge.bundle, maxID)))
@@ -82,6 +82,9 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         val descriptor = Reg(new RequestDescriptor(maxID))
 
 
+        packer.io.clk := io.clk
+        ColExtractor.io.clk := io.clk
+
 
         io.ID := BaseReq.source
         io.useID := currentlyPacking
@@ -97,7 +100,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         descriptor := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.descriptor, descriptor)
 
         ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
-        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.fire
+        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.fire && io.clk
         ColExtractor.io.DescriptorIn := io.FetchUnitPort.bits.descriptor
 
 
@@ -110,7 +113,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
 
-        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
+        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source) && io.clk
         
 
         // this should fire after we get an entire cache line
@@ -120,8 +123,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         //io.TrapperPort.bits.baseReq.source := descriptor.baseID
          
         io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
-        io.TrapperPort.valid := packer.io.PackedLine.valid
-        packer.io.PackedLine.ready := io.TrapperPort.ready
+        io.TrapperPort.valid := packer.io.PackedLine.valid && io.clk
+        packer.io.PackedLine.ready := io.TrapperPort.ready && io.clk
         /*
             Column extractor takes data out of the incoming lines and sends it to packer
         */
@@ -142,8 +145,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
             We can now retire the ID that was allocated for this request
         */
         io.RequestorPort.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
-        io.RequestorPort.valid := io.FetchUnitPort.fire
+        io.RequestorPort.valid := io.FetchUnitPort.fire && io.clk
         val ready = WireInit(false.B)
-        ready := io.RequestorPort.ready 
+        ready := io.RequestorPort.ready && io.clk
 
 }

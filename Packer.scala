@@ -23,6 +23,7 @@ case class PackerColExtractIO(maxID : Int) extends Bundle {
 class PackerRME(maxID: Int) extends Module {
 
     val io = IO(new Bundle {
+        val clk  = Input(Bool())
         val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(maxID)))
         val PackedLine = DecoupledIO(UInt(512.W))
         val nPacked = Output(UInt(7.W))
@@ -44,7 +45,7 @@ class PackerRME(maxID: Int) extends Module {
     val dataInBounds = NumPackedBytes + io.ColExtractor.bits.dataSize <= 64.U
     val willOverflow = io.ColExtractor.valid && !dataInBounds 
     val ready = io.ColExtractor.valid && dataInBounds //&& (stateReg === active)
-    io.ColExtractor.ready := ready
+    io.ColExtractor.ready := ready && io.clk
 
     when (io.ColExtractor.fire)
     {
@@ -134,7 +135,7 @@ class PackerRME(maxID: Int) extends Module {
 
 
     // willOverFlow gets set when the next value would overflow the cacheline
-    io.PackedLine.valid := (NumPackedBytes === 64.U)  //|| willOverflow
+    io.PackedLine.valid := (NumPackedBytes === 64.U) && io.clk //|| willOverflow
     io.PackedLine.bits := packedLine
         
 

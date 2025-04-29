@@ -41,13 +41,14 @@ case object RMEKey extends Field[Option[RelMemParams]](None)
 
 class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 {
-
+  
     val addr = Seq(AddressSet(params.rmeaddress, params.rmeAddressSize))
     
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
     
     }
     
+      
     /*
       We need this to reserve an address range in the device tree 
       -> This required modifications to the device tree generation. See RocketChip fork
@@ -84,6 +85,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
+
+    val clk = RegInit(0.U(1.W))
+
+    val modClk = clk === 1.U
+
+
+
     val config = Wire(RMEConfigPortIO())
      // Registers
         val r_RowSize = RegInit(0.U(32.W))
@@ -94,8 +102,6 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
         val r_EnableRME = RegInit(false.B)
-
-
 
         val r_FetchFullStall =      if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_FetchToCtrlStall =    if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
@@ -209,9 +215,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i, j))
         fetch_unit.io
       })
-
-
       val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
+
+      trapper.io.clk := modClk
+      requestor.io.clk := modClk
+      for (i <- 0 until fetch_units.length)
+      {
+        fetch_units(i).clk := modClk
+      }
+      control_unit.io.clk := modClk
+
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       //when (in.d.fire)
       //{

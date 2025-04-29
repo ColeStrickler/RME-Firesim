@@ -52,6 +52,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         }
 
         val io = IO(new Bundle {
+            val clk = Input(Bool())
             // Fetch Unit Port
             val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))
             //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
@@ -123,7 +124,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         stateReg := stateReg
         baseRequest := baseRequest
         requestQueue.io.enq <> io.Trapper.Request // queue up requests to prevent stalls
-        io.Trapper.Request.ready := requestQueue.io.enq.ready
+        io.Trapper.Request.ready := requestQueue.io.enq.ready && io.clk
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
@@ -140,12 +141,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         
         readyNextReq := stateReg === idle
-        requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
+        requestQueue.io.deq.ready := readyNextReq && io.clk// start new requests when all of old ones have been sent
 
 
         id_allocator.io.retireID.bits := io.ControlUnit.bits.retireID // Control unit will retire IDs
-        id_allocator.io.retireID.valid := io.ControlUnit.valid
-        io.ControlUnit.ready := id_allocator.io.retireID.ready
+        id_allocator.io.retireID.valid := io.ControlUnit.valid && io.clk
+        io.ControlUnit.ready := id_allocator.io.retireID.ready && io.clk
         id_allocator.io.newID.ready := false.B
 
 
@@ -153,8 +154,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         outQueue.io.enq.valid := false.B
 
         io.FetchUnit.bits := outQueue.io.deq.bits
-        io.FetchUnit.valid := outQueue.io.deq.valid
-        outQueue.io.deq.ready := io.FetchUnit.ready
+        io.FetchUnit.valid := outQueue.io.deq.valid && io.clk
+        outQueue.io.deq.ready := io.FetchUnit.ready && io.clk
         
         
         when (requestQueue.io.deq.fire)
@@ -205,10 +206,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.bits := baseRequest
                 sendRequest.bits.address := R_i_j + params.rmeaddress.U
                 sendRequest.bits.size := sizeField
-                sendRequest.valid := true.B // i think since we switch states we can always set this valid
+                sendRequest.valid := true.B && io.clk// i think since we switch states we can always set this valid
                 
 
-                id_allocator.io.newID.ready := outQueue.io.enq.ready // we should then fire, claim id and advance
+                id_allocator.io.newID.ready := outQueue.io.enq.ready && io.clk // we should then fire, claim id and advance
                 val descriptorOut = Wire(RequestDescriptor(maxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.allocID := id_allocator.io.newID.bits
@@ -221,7 +222,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
                 outQueue.io.enq.bits.descriptor := descriptorOut
                 outQueue.io.enq.bits.BaseReq := baseRequest
-                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire
+                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.clk
                 
 
                 when (outQueue.io.enq.fire)

@@ -28,12 +28,10 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     val tlInParams = tlInEdge.bundle
    // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
     val io = IO(new Bundle {
+        val clk = Input(Bool())
         val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
         val TLInD = DecoupledIO(new TLBundleD(tlInParams))
         
-
-
-
         val Requestor = new RequestorTrapperPort(tlInParams)
         val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
 
@@ -94,7 +92,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, Mux(io.TLInD.fire, replyCacheLine >> DataWidth, replyCacheLine))
         
         replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
-        io.ControlUnit.ready := !currentlyBeating
+        io.ControlUnit.ready := !currentlyBeating && io.clk
 
 
         when (io.ControlUnit.fire)
@@ -115,7 +113,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, currentDataWire), toSend)
 
         currentRequest.bits := tlInEdge.AccessAck(replyToBaseReq, currentDataWire)
-        currentRequest.valid := currentlyBeating
+        currentRequest.valid := currentlyBeating && io.clk
         
         when (io.TLInD.fire)
         {

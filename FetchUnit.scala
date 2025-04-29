@@ -22,7 +22,10 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters, maxID : Int) exte
 
 case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, maxID : Int) extends Bundle
 {
-// Requestor Port
+
+
+        val clk = Input(Bool())
+        // Requestor Port
         val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))) // Receive address to request from the Requestor Module]
         //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
         //val isBaseRequest = Flipped(Output(Bool()))
@@ -67,7 +70,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val io = IO(new FetchUnitIO(tlInEdge.bundle, tlOutParams, maxID)).suggestName(s"fetchunitio_$instance-$subInstance")
 
-
+        
         val fetchReq = Reg(new TLBundleA(tlOutParams))
         val baseReq = Reg(new TLBundleA(tlOutParams))
         val descriptor = Reg(new RequestDescriptor(maxID))
@@ -110,8 +113,8 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
         beatingRequest.bits := currentRequest
         beatingRequest.bits.source := descriptor.allocID
-        beatingRequest.valid := currentlyBeating
-        io.Requestor.ready := !currentlyBeating && !hasActiveRequest
+        beatingRequest.valid := currentlyBeating && io.clk
+        io.Requestor.ready := !currentlyBeating && !hasActiveRequest && io.clk
 
         io.OutReq <> beatingRequest
         
@@ -129,7 +132,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         val receivedAllData = RegInit(true.B)
         val corrupt = RegInit(false.B)
 
-        io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
+        io.inReply.ready := !dataRegFull && io.clk   // can not receive more replies until we have done something with current data
         // shift in new data
         val dataWidth = io.inReply.bits.data.getWidth
         val shiftNewData = io.inReply.bits.data //+ d_count // count is to test
@@ -152,7 +155,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         */
         //SynthesizePrintf("TLBundleD inReply d_first %d, d_last %d, d_done %d, d_count %d, numbeats %d\n", d_first, d_last, d_done, d_count, tlOutEdge.numBeats1(io.inReply.bits))
         dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
-        io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
+        io.ControlUnit.valid := dataRegFull && io.clk // we can write valid data to SPM after receiving entire cache line
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
         io.ControlUnit.bits.descriptor := descriptor
@@ -164,5 +167,5 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
         io.SrcId.bits := descriptor.allocID
-        io.SrcId.valid := hasActiveRequest
+        io.SrcId.valid := hasActiveRequest && io.clk
 }
