@@ -80,7 +80,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x baseReqSrc %d, address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, baseReq.source, io.OutReq.bits.address)
         }
 
         when (io.inReply.fire)
@@ -159,7 +159,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg
         io.ControlUnit.bits.descriptor := descriptor
-        when (dataRegFull)
+        when (io.ControlUnit.fire)
         {
             SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor src %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID)
         }

@@ -97,8 +97,14 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
         when (io.ControlUnit.fire)
         {
-           // SynthesizePrintf("[TRAPPER] --> cache line from control unit. baseReq address: 0x%x\n", io.ControlUnit.bits.baseReq.address)
+           SynthesizePrintf("[TRAPPER] --> cache line from control unit. baseReq address: 0x%x\n", io.ControlUnit.bits.baseReq.address)
         }
+
+        when (io.ControlUnit.valid || currentlyBeating)
+        {
+            SynthesizePrintf("[TRAPPER]  ==> currentlyBeating %d, %d, %d, %d, %d, %d\n", currentlyBeating, d_first, d_last, d_done, beatCount, count)
+        }
+
 
         currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)
        // rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
@@ -119,6 +125,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         {
             //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
             SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x\n", baseReqUpdated.address, currentRequest.bits.data)
+            
         }
         
         io.TLInD <> currentRequest

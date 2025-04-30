@@ -123,7 +123,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         */
         stateReg := stateReg
         baseRequest := baseRequest
-        requestQueue.io.enq <> io.Trapper.Request // queue up requests to prevent stalls
+        requestQueue.io.enq.bits := io.Trapper.Request.bits // queue up requests to prevent stalls
+        requestQueue.io.enq.valid := io.Trapper.Request.valid && io.clk
+        io.Trapper.Request.ready := io.clk && requestQueue.io.enq.ready
+
+
+
         io.Trapper.Request.ready := requestQueue.io.enq.ready && io.clk
 
         io.FetchUnit.valid := false.B // default to false

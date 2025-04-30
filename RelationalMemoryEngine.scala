@@ -89,6 +89,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val clk = RegInit(0.U(1.W))
 
     val modClk = clk === 1.U
+    clk := clk + 1.U
 
 
 
@@ -226,10 +227,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       control_unit.io.clk := modClk
 
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
-      //when (in.d.fire)
-      //{
-      //  SynthesizePrintf("in.d.fire\n")
-      //}
+      when (in.d.fire)
+      {
+        SynthesizePrintf("in.d.fire %d\n", in.d.bits.source)
+      }
       /*
         Input and output of RME
       */
@@ -273,12 +274,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val replySelector = fetch_unit.SrcId.valid && (fetch_unit.SrcId.bits === out.d.bits.source)
         replySelector
       }
-      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) // if any conditions are true, broadcast to fetch units
+      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) || !modClk // if any conditions are true, broadcast to fetch units, or if not clk
       replyFromDRAMDemux.io.outB.ready := false.B // default 
       for (n <- 0 until fetch_units.length)
       {
         val fetch_unit = fetch_units(n)
-        fetch_unit.inReply.valid := replySelectorCond(n) && out.d.valid
+        fetch_unit.inReply.valid := replySelectorCond(n) && out.d.valid && modClk
         fetch_unit.inReply.bits := replyFromDRAMDemux.io.outB.bits
         when (replySelectorCond(n)) // when this fetch unit matches src ID, we fed that ready signal to demux
         {

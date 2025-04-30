@@ -58,10 +58,10 @@ class ColumnExtractor(maxID: Int) extends Module {
         To test in the begginning we are just going to take the first 4 bytes from each line
     */
     tmpWire := tmpLine
-    //when (io.CacheLineIn.fire)
-    //{
-    //    SynthesizePrintf("[ColumnExtractor] --> received cache line in\n")
-    //}
+    when (io.CacheLineIn.fire)
+    {
+        SynthesizePrintf("[ColumnExtractor] --> received cache line in\n")
+    }
 
 
     io.CacheLineIn.ready := !hasValidLine && io.clk
@@ -79,7 +79,7 @@ class ColumnExtractor(maxID: Int) extends Module {
         We will change this logic
     */
     //hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
-    hasValidLine := io.CacheLineIn.fire
+    hasValidLine := io.CacheLineIn.fire || (hasValidLine && !io.clk)
     when (io.CacheLineIn.fire)
     {
        // SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
@@ -102,6 +102,7 @@ class ColumnExtractor(maxID: Int) extends Module {
 
     when (io.Packer.fire)
     {
+        SynthesizePrintf("[COLUMN EXTRACTORT] sent to packer\n")
         //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
         //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", tmpWire2)
         //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)

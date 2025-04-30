@@ -49,7 +49,7 @@ class PackerRME(maxID: Int) extends Module {
 
     when (io.ColExtractor.fire)
     {
-        //SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
+        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
     }
 
     /*
@@ -143,7 +143,7 @@ class PackerRME(maxID: Int) extends Module {
     {
         NumPackedBytes := 0.U  
         //SynthesizePrintf("io.PackedLine.fire NumPackedBytes %d, willOverflow %d\n", NumPackedBytes, willOverflow)
-        //SynthesizePrintf("io.PackedLine.fire, Packed line 0x%x\n", packedLine)
+        SynthesizePrintf("io.PackedLine.fire, Packed line 0x%x\n", packedLine)
     }
 
 
