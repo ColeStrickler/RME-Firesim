@@ -86,9 +86,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
 
-    val clk = RegInit(0.U(1.W))
+    val clk = RegInit(0.U(2.W))
 
-    val modClk = clk === 1.U
+    val modClk = clk === 3.U
     clk := clk + 1.U
 
 
@@ -274,7 +274,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val replySelector = fetch_unit.SrcId.valid && (fetch_unit.SrcId.bits === out.d.bits.source)
         replySelector
       }
-      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) || !modClk // if any conditions are true, broadcast to fetch units, or if not clk
+      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) || (!modClk && config.Enabled) // if any conditions are true, broadcast to fetch units, or if not clk
       replyFromDRAMDemux.io.outB.ready := false.B // default 
       for (n <- 0 until fetch_units.length)
       {
