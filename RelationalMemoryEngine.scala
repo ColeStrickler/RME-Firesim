@@ -86,11 +86,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
 
-    val clk = RegInit(0.U(2.W))
-
-    val modClk = clk === 3.U
-    clk := clk + 1.U
-
+    
 
 
     val config = Wire(RMEConfigPortIO())
@@ -103,6 +99,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
         val r_EnableRME = RegInit(false.B)
+        val r_Clock     = RegInit(0.U(32.W))
 
         val r_FetchFullStall =      if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_FetchToCtrlStall =    if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
@@ -139,11 +136,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
       val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
-
+      val mmio_Clock = Seq((0x400) -> Seq(RegField(r_Clock.getWidth, r_Clock, RegFieldDesc("clockRME", "clockRME"))))
 
      
       val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
-                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters
+                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters ++ mmio_Clock
       val regmap = ctlnode.regmap(mmreg: _*)
 
       config.RowSize := r_RowSize
@@ -173,6 +170,21 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
               r_ColumnOffsets(i) := 0.U
           }
       }
+
+
+    val clk = RegInit(0.U(6.W))
+    val modClk = clk === r_Clock
+    clk :=  clk + 1.U
+    when (modClk || r_Reset)
+    {
+      clk := 0.U
+    } 
+
+
+
+
+
+
 
     for (i <- 0 until nClients)
     {
