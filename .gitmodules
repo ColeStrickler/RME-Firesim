@@ -1,0 +1,3 @@
+[submodule "dtu_agu"]
+	path = dtu_agu
+	url = git@github.com:ColeStrickler/dtu_agu.git
