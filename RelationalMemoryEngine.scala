@@ -20,7 +20,7 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
 import freechips.rocketchip.util.SeqToAugmentedSeq
-
+import agu._
 case class RelMemParams (
     regaddress: Int = 0x3000000,
     rmeaddress: BigInt = 0x110000000L,
@@ -57,6 +57,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     }
     
   val node = TLAdapterNode()
+  val agu = LazyModule(new AGUTop(new AGUParams))
+  val aguctlnode = agu.ctlnode
     
 
 
@@ -78,12 +80,19 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         concurrency = 1, // Only one flush at a time (else need to track who answers)
         beatBytes   = params.controlBeatBytes)
      
+
+    
+    
   println("\n\n\n\nUsing relational memory engine\n\n\n\n")
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
     val nClients = node.in.length
-    require(nClients >= 1)
     println(s"Number of edges into RME: $nClients\n")
+    //require(nClients == 1)
+    val aguModule = agu.module  // hardware instance of AGUTop
+
+
+
     val config = Wire(RMEConfigPortIO())
      // Registers
         val r_RowSize = RegInit(0.U(32.W))
@@ -167,14 +176,18 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
           }
       }
 
-    for (i <- 0 until nClients)
+    for (i <- 1 until nClients)
     {
-      
-
+      val (out, out_edge) = node.out(i)
+      val (in, in_edge) = node.in(i)
+      val outParams = out_edge.bundle
+      val inParams = in_edge.bundle
+      out <> in 
+    }
         // Assign IO
 
         
-       
+      val i = 0
 
         //when (r_EnableRME)
         //{
@@ -204,7 +217,15 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
       val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
-      val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, i))
+      val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, 0))
+
+      
+
+      requestor.io.agu <> aguModule.io.reqIO
+      
+
+
+
       val fetch_units : Vec[FetchUnitIO] = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
         val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i, j))
         fetch_unit.io
@@ -433,7 +454,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       
-    }
+    
 
       
 
@@ -495,8 +516,13 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
         mbus.rme.get.ctlnode := 
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
 
+      pbus.coupleTo(portName) {
+        mbus.rme.get.aguctlnode := 
+        TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
+      
+
       mbus.rme.get
     }
     case None => None
-  }
 }
+  }

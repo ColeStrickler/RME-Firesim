@@ -40,10 +40,16 @@ case class RequestorFetchUnitPort(params: TLBundleParameters, maxID: Int) extend
     val descriptor = Output(new RequestDescriptor(maxID))
 }
 
+case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
+{
+    val doGen = Decoupled(Bool())
+    val offset = Flipped(Decoupled(UInt(bitwidth.W)))
+}
+
 
 
 class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
-    implicit p: Parameters) extends Module {
+    implicit p: Parameters) extends Module{
         val tlOutParams = tlOutEdge.bundle
         //val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
         val tlInParams = tlInEdge.bundle
@@ -52,6 +58,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
          def divideCeil(a: UInt, b: UInt): UInt = {
             (a + b - 1.U) / b
         }
+        
+
 
         val io = IO(new Bundle {
             // Fetch Unit Port
@@ -68,14 +76,16 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             // Trapper Port
             val Trapper = Flipped(RequestorTrapperPort(tlInParams))
 
+            val agu = new RequestorAGUPort()
+
         }).suggestName(s"requestorio_$instance")
 
         val CacheLineSize = 64 // cache line size in bytes
 
         // this isn't entirely flexible, assumes 1 bit source expansion
         val id_allocator = Module(new IDAllocator(math.pow(2, tlInParams.sourceBits-1).toInt, maxID))
-        val agu = LazyModule(new AGUTop(new AGUParams))
         
+    
 
 
         val DatabaseBaseAddress = params.rmeaddress.U
@@ -153,7 +163,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.valid := outQueue.io.deq.valid
         outQueue.io.deq.ready := io.FetchUnit.ready
         
-        
+        io.agu.doGen.bits := false.B
+        io.agu.doGen.valid := false.B
+        io.agu.offset.ready := false.B
         when (requestQueue.io.deq.fire)
         {
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
@@ -169,19 +181,21 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 nSentForProcessing := 0.U
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
                 baseRequest := requestQueue.io.deq.bits
+                io.agu.doGen.bits := false.B
             }
             is (active)
             {
                 //SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
-                agu.module.io.doGen.valid := (nSentForProcessing < nDescriptors)
+                io.agu.doGen.valid := (nSentForProcessing < nDescriptors)
+                io.agu.doGen.bits := true.B
                 //agu.module.io.doGen.fire
                 //agu.module.io.offset.fire
                         
                 val last = col === io.Config.EnabledColumnCount - 1.U
                 val done = last && outQueue.io.enq.fire
                 //SynthesizePrintf("[REQUESTOR] baseRequest.address 0x%x\n", baseRequest.address)
-                val P_i_j = agu.module.io.offset.bits
-                val R_i_j = (P_i_j / 8.U(60.W)) * busWidth
+                val P_i_j = io.agu.offset.bits
+                val R_i_j = (P_i_j / 8.U(32.W)) * busWidth
                 val nBeats = 1.U //divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
                 val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = P_i_j % busWidth
@@ -208,8 +222,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
                 outQueue.io.enq.bits.descriptor := descriptorOut
                 outQueue.io.enq.bits.BaseReq := baseRequest
-                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && agu.module.io.offset.valid
-                agu.module.io.offset.ready := outQueue.io.enq.ready
+                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.valid
+                io.agu.offset.ready := outQueue.io.enq.ready
 
                 when (outQueue.io.enq.fire)
                 {
@@ -222,12 +236,13 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 }
 
 
-                nSentForProcessing := nSentForProcessing + agu.module.io.doGen.fire
+                nSentForProcessing := nSentForProcessing + io.agu.doGen.fire
                 nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
                 sumOffset := Mux(outQueue.io.enq.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
 
                 stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && outQueue.io.enq.fire, idle, stateReg)
             }
         }
+        
 
 }
