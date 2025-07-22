@@ -196,7 +196,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 //SynthesizePrintf("[REQUESTOR] baseRequest.address 0x%x\n", baseRequest.address)
                 val P_i_j = io.agu.offset.bits
                 val R_i_j = (P_i_j / 8.U(32.W)) * busWidth
-                val nBeats = 1.U //divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
+                val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
                 val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = P_i_j % busWidth
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
@@ -224,6 +224,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 outQueue.io.enq.bits.BaseReq := baseRequest
                 outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.valid
                 io.agu.offset.ready := outQueue.io.enq.ready
+
+
+                when (io.agu.offset.fire)
+                {
+                    SynthesizePrintf("AGU.fire 0x%x\n", io.agu.offset.bits)
+                }
 
                 when (outQueue.io.enq.fire)
                 {

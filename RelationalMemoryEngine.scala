@@ -517,7 +517,7 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
 
       pbus.coupleTo(portName) {
-        mbus.rme.get.aguctlnode := 
+        mbus.rme.get.agu.ctlnode := 
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
       
 
