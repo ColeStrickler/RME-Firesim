@@ -75,6 +75,13 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         baseReq :=  Mux( io.Requestor.fire, io.Requestor.bits.BaseReq, baseReq)
         //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
+
+
+        when (io.Requestor.fire)
+        {
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor\n", instance.U, subInstance.U)
+        }
+
         when(io.OutReq.fire)
         {
             SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
@@ -114,7 +121,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.Requestor.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
-        
+        SynthesizePrintf("[FetchUnit_%d_%d] ==> has active request %d, currentlyBeating %d, io.OutReq.ready %d\n", instance.U, subInstance.U, hasActiveRequest, currentlyBeating, io.OutReq.ready)
         
         /*
 

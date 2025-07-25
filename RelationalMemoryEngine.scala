@@ -294,7 +294,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         }
       }
 
-
+      when (out.d.fire)
+      {
+        SynthesizePrintf("dram resp %d\n", in.d.bits.source)
+      }
 
 
       // Either from trapper or directly from DRAM if not an rme request

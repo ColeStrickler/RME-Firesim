@@ -173,6 +173,14 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         
         }
 
+
+
+
+        when ((outQueue.io.deq.valid && !io.FetchUnit.ready) || outQueue.io.count > 0.U)
+        {
+            SynthesizePrintf("[REQUESTOR] valid request cannot be sent to fetch units\n")
+        }
+
         switch(stateReg)
         {
             is (idle)
@@ -209,7 +217,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.valid := true.B // i think since we switch states we can always set this valid
                 
 
-                id_allocator.io.newID.ready := outQueue.io.enq.ready // we should then fire, claim id and advance
+                id_allocator.io.newID.ready := outQueue.io.enq.ready && io.agu.offset.valid // we should then fire, claim id and advance
                 val descriptorOut = Wire(RequestDescriptor(maxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.allocID := id_allocator.io.newID.bits
@@ -222,13 +230,13 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
                 outQueue.io.enq.bits.descriptor := descriptorOut
                 outQueue.io.enq.bits.BaseReq := baseRequest
-                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.valid
-                io.agu.offset.ready := outQueue.io.enq.ready
+                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.fire
+                io.agu.offset.ready := sendRequest.valid && id_allocator.io.newID.valid && outQueue.io.enq.ready
 
 
                 when (io.agu.offset.fire)
                 {
-                    SynthesizePrintf("AGU.fire 0x%x\n", io.agu.offset.bits)
+                    SynthesizePrintf("AGU.fire 0x%x src=%d\n", io.agu.offset.bits, sendRequest.bits.source)
                 }
 
                 when (outQueue.io.enq.fire)
@@ -239,6 +247,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
+                    SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)
                 }
 
 
