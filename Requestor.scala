@@ -42,8 +42,10 @@ case class RequestorFetchUnitPort(params: TLBundleParameters, maxID: Int) extend
 
 case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
 {
-    val doGen = Decoupled(Bool())
-    val offset = Flipped(Decoupled(UInt(bitwidth.W)))
+    //val doGen = Decoupled(Bool())
+    val offsetAddrFromBase = Decoupled(UInt(bitwidth.W))    // input
+    val offset = Flipped(Decoupled(UInt(bitwidth.W)))       // output
+    val data_size = Output(UInt(8.W))                       // used by agu
 }
 
 
@@ -117,8 +119,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val requestOffset = (requestQueue.io.deq.bits.address - params.rmeaddress.U)(31, 0)
         //row := requestRow
         val nDescriptorsSent = RegInit(0.U(8.W))
-        val nSentForProcessing = RegInit(0.U(8.W))
-
+        //val nSentForProcessing = RegInit(0.U(8.W))
+        val sentAddrAGU = RegInit(false.B)
         
         val col = RegInit(0.U(log2Ceil(512 + 1).W))
         val sumOffset = RegInit(0.U(log2Ceil(512 + 1).W))
@@ -163,8 +165,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.valid := outQueue.io.deq.valid
         outQueue.io.deq.ready := io.FetchUnit.ready
         
-        io.agu.doGen.bits := false.B
-        io.agu.doGen.valid := false.B
+        //io.agu.doGen.bits := false.B
+        //io.agu.doGen.valid := false.B
         io.agu.offset.ready := false.B
         when (requestQueue.io.deq.fire)
         {
@@ -186,16 +188,28 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             is (idle)
             {
                 nDescriptorsSent := 0.U
-                nSentForProcessing := 0.U
+               // nSentForProcessing := 0.U
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
                 baseRequest := requestQueue.io.deq.bits
-                io.agu.doGen.bits := false.B
+               // io.agu.doGen.bits := false.B
+                sentAddrAGU := false.B
             }
             is (active)
             {
-                //SynthesizePrintf("Rowsize %d, row %d, io.Config.ColumnOffsets(col) %d\n", io.Config.RowSize, row, io.Config.ColumnOffsets(col))
-                io.agu.doGen.valid := (nSentForProcessing < nDescriptors)
-                io.agu.doGen.bits := true.B
+                /*
+                    Now since we implement the unroll unit, we only need to fire one time here.
+                    The rest of the control will be done inside the AGU
+                */
+
+                sentAddrAGU := !io.agu.offsetAddrFromBase.fire
+                io.agu.offsetAddrFromBase.valid := sentAddrAGU
+
+
+
+
+
+                //io.agu.doGen.valid := (nSentForProcessing < nDescriptors)
+                //io.agu.doGen.bits := true.B
                 //agu.module.io.doGen.fire
                 //agu.module.io.offset.fire
                         
@@ -247,11 +261,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
                     SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
-                    SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)
+                    //SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)
                 }
 
 
-                nSentForProcessing := nSentForProcessing + io.agu.doGen.fire
+                //nSentForProcessing := nSentForProcessing + io.agu.doGen.fire
                 nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
                 sumOffset := Mux(outQueue.io.enq.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
 
