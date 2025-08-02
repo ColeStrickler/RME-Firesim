@@ -168,6 +168,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         //io.agu.doGen.bits := false.B
         //io.agu.doGen.valid := false.B
         io.agu.offset.ready := false.B
+        io.agu.data_size := io.Config.ColumnWidths
+        io.agu.offsetAddrFromBase.valid := false.B
+        io.agu.offsetAddrFromBase.bits := 0.U
+        sentAddrAGU := false.B
+
+
         when (requestQueue.io.deq.fire)
         {
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
@@ -191,8 +197,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                // nSentForProcessing := 0.U
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
                 baseRequest := requestQueue.io.deq.bits
+                io.agu.offsetAddrFromBase.valid := false.B
+                io.agu.offsetAddrFromBase.bits := 0.U
                // io.agu.doGen.bits := false.B
-                sentAddrAGU := false.B
+                sentAddrAGU := false.B // i think we can go directly to onm,
             }
             is (active)
             {
@@ -200,9 +208,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     Now since we implement the unroll unit, we only need to fire one time here.
                     The rest of the control will be done inside the AGU
                 */
-
-                sentAddrAGU := !io.agu.offsetAddrFromBase.fire
-                io.agu.offsetAddrFromBase.valid := sentAddrAGU
+                sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
+                io.agu.offsetAddrFromBase.valid := !sentAddrAGU
 
 
 
