@@ -254,12 +254,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   
       replyFromDRAMDemux.io.dataIn <> out.d
       //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
-      
+     // SynthesizePrintf("Cycle");
    
-      //when (in.a.fire)
-      //{
-      //  SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
-      //}   
+      when (in.a.fire)
+      {
+        SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
+      }   
       //when (in.d.fire)
       //{
       //  SynthesizePrintf("in.d.fire\n")

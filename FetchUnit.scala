@@ -121,7 +121,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.Requestor.ready := !currentlyBeating && !hasActiveRequest
 
         io.OutReq <> beatingRequest
-        SynthesizePrintf("[FetchUnit_%d_%d] ==> has active request %d, currentlyBeating %d, io.OutReq.ready %d\n", instance.U, subInstance.U, hasActiveRequest, currentlyBeating, io.OutReq.ready)
+        //SynthesizePrintf("[FetchUnit_%d_%d] ==> has active request %d, currentlyBeating %d, io.OutReq.ready %d\n", instance.U, subInstance.U, hasActiveRequest, currentlyBeating, io.OutReq.ready)
         
         /*
 

@@ -210,6 +210,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 */
                 sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
                 io.agu.offsetAddrFromBase.valid := !sentAddrAGU
+                io.agu.offsetAddrFromBase.bits := baseRequest.address-params.rmeaddress.U
+                SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
 
 
 
