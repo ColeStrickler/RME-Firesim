@@ -56,6 +56,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
     }
     
+    
   val node = TLAdapterNode()
   val agu = LazyModule(new AGUTop(new AGUParams))
   val aguctlnode = agu.ctlnode
