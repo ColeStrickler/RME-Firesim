@@ -117,6 +117,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         currentRequest.bits := tlInEdge.AccessAck(replyToBaseReq, currentDataWire)
         currentRequest.valid := currentlyBeating
         
+        
         when (io.TLInD.fire)
         {
             //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)

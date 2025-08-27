@@ -21,10 +21,12 @@ import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
+import _root_.subsystem.rme.subsystem.rme.toRMEConditionalDemuxA
 case class RelMemParams (
     regaddress: Int = 0x3000000,
-    rmeaddress: BigInt = 0x110000000L,
-    rmeAddressSize: BigInt = 0xfffffff,
+    rmeaddress: BigInt = 0x118000000L,
+    rmeShift : Int =       0x8000000,
+    rmeAddressSize: BigInt = 0x8000000,
     controlBeatBytes : Int = 8,
     DataSPMSize : Int = 1024,
     MetadataSPMSize : Int = 1024,
@@ -42,7 +44,7 @@ case object RMEKey extends Field[Option[RelMemParams]](None)
 class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 {
 
-    val addr = Seq(AddressSet(params.rmeaddress, params.rmeAddressSize))
+    val addr = Seq(AddressSet(params.rmeaddress, params.rmeAddressSize-1))
     
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
     
@@ -66,7 +68,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
     def ToRME(addr : UInt) : Bool = {
-        val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + ((params.rmeAddressSize + 1)/2).U)
+        val torme : Bool = addr >= params.rmeaddress.U && addr <= (params.rmeaddress + params.rmeAddressSize).U
         torme
     }
 
@@ -244,7 +246,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       */
       val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
       val isWritebackToRME = ToRME(in.a.bits.address) && !(in.a.bits.opcode === TLMessages.Get)
-      val demux = Module(new ConditionalDemuxA(in_edge.bundle))
+      val demux = Module(new toRMEConditionalDemuxA(in_edge.bundle, params))
       demux.io.dataIn <> in.a
       demux.io.sel := isRMERequest && !isWritebackToRME 
       demux.io.isWriteback := false.B //isWritebackToRME && config.Enabled
