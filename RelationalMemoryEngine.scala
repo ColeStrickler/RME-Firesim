@@ -22,6 +22,7 @@ import _root_.subsystem.rme.FetchUnitRME
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
 import _root_.subsystem.rme.subsystem.rme.toRMEConditionalDemuxA
+import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
 case class RelMemParams (
     regaddress: Int = 0x3000000,
     rmeaddress: BigInt = 0x118000000L,
@@ -55,7 +56,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       -> This required modifications to the device tree generation. See RocketChip fork
     */
     ResourceBinding {
-      Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
+      Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, false, true)))
     }
     
     
@@ -63,12 +64,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   val agu = LazyModule(new AGUTop(new AGUParams))
   val aguctlnode = agu.ctlnode
     
-
-
-
+  
+  val dtu_cached_region = LazyModule(new DTUCachedRegionManager)
+ // val dtu_uncached_region = LazyModule(new DTUUncachedRegion)
 
     def ToRME(addr : UInt) : Bool = {
-        val torme : Bool = addr >= params.rmeaddress.U && addr <= (params.rmeaddress + params.rmeAddressSize).U
+        val torme : Bool = false.B //addr >= params.rmeaddress.U && addr <= (params.rmeaddress + params.rmeAddressSize).U
         torme
     }
 
@@ -263,10 +264,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       {
         SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
       }   
-      //when (in.d.fire)
-      //{
-      //  SynthesizePrintf("in.d.fire\n")
-      //}
+
+      
+      when (in.d.fire)
+      {
+        SynthesizePrintf("in.d.fire\n")
+      }
 
       //when (out.a.fire)
       //{
@@ -500,6 +503,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 trait CanHaveRME extends {
   val rme: Option[RME]
+  val dtu_uncached_region : Option[DTUUncachedRegion]
 }
 
 trait HasReservedAddressRange extends SimpleDevice {
@@ -515,6 +519,9 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
   private val portName = "dram-bru"
   val pbus = locateTLBusWrapper(PBUS)
   val mbus = locateTLBusWrapper(MBUS)
+  val fbus = locateTLBusWrapper((FBUS))
+  val sbus = locateTLBusWrapper(SBUS)
+
 
   val rme = p(RMEKey) match {
     case Some(params) => {
@@ -525,8 +532,21 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
       pbus.coupleTo(portName) {
         mbus.rme.get.agu.ctlnode := 
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
-      
 
+      mbus.coupleTo("dtu_cached_region") {
+        mbus.rme.get.dtu_cached_region.node := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
+      }
+
+    //val uncached = LazyModule(new DTUUncachedRegion)
+      
+    sbus.coupleTo("dtu_uncached") {
+      mbus.dtu_uncached_region.get.cpuNode := TLFragmenter(sbus.beatBytes, sbus.blockBytes, holdFirstDeny = true) := TLBuffer(1) := _
+    }
+      // Connect uncached region to memory bus (MBUS)
+
+    mbus.coupleFrom("simple_uncached_region_mem") { _ := TLFragmenter(mbus.beatBytes, mbus.blockBytes, holdFirstDeny = true) := mbus.dtu_uncached_region.get.memNode }
+          
+          
       mbus.rme.get
     }
     case None => None

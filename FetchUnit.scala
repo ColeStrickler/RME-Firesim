@@ -67,7 +67,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
     val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val io = IO(new FetchUnitIO(tlInEdge.bundle, tlOutParams, maxID)).suggestName(s"fetchunitio_$instance-$subInstance")
 
-
+    
         val fetchReq = Reg(new TLBundleA(tlOutParams))
         val baseReq = Reg(new TLBundleA(tlOutParams))
         val descriptor = Reg(new RequestDescriptor(maxID))

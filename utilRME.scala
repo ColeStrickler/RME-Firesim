@@ -13,6 +13,7 @@ import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.tilelink.TLMessages.AccessAck
 import freechips.rocketchip.tilelink.TLMessages.AccessAckData
+import freechips.rocketchip.tilelink.TLArbiter
 import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
@@ -268,7 +269,134 @@ class toRMEConditionalDemuxA(params: TLBundleParameters, rmeParams: RelMemParams
 
 
 
+import freechips.rocketchip.subsystem._
+import freechips.rocketchip.tilelink._
+import freechips.rocketchip.diplomacy._
+import chisel3._
 
+class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
+  // Device info (optional, useful for reg/resource mapping)
+  val device = new SimpleDevice("simpleForward", Seq("simple,forward"))
+  val addr = AddressSet.misaligned(0x180000000L, 0x10000000L)
+  // 1. Incoming from FBUS (slave)
+  val cpuNode = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
+    address = addr,
+    resources = device.reg,
+    regionType = RegionType.UNCACHED,
+    executable = false,
+    supportsGet = TransferSizes(1, 64),
+    supportsPutFull = TransferSizes(1, 64),
+    supportsPutPartial = TransferSizes(1, 64),
+    fifoId = Some(0))), 8)))
+
+  // 2. Outgoing to MBUS (master)
+  val memNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
+    name = "SimpleForwardClient",
+    sourceId = IdRange(0, 256)
+  )))))
+  //memNode := cpuNode
+  lazy val module = new LazyModuleImp(this) {
+     //Forward requests: cpuNode.in -> memNode.out
+     val (inTL, inEdge) = cpuNode.in(0)   // From SBus
+    val (outTL, outEdge) = memNode.out(0) // To MBUS
+
+    // Register to hold the current request being forwarded
+  val forwardReg = Reg(new TLBundleA(inTL.params))
+  forwardReg := Mux(inTL.a.fire, inTL.a.bits, forwardReg)
+
+  
+
+    val canSend = RegInit(false.B)
+    canSend := Mux(canSend, !outTL.a.fire, inTL.a.fire)
+    inTL.a.ready := !canSend
+
+    outTL.a.bits := forwardReg                   
+    outTL.a.bits.address := forwardReg.address -  0x20000000.U
+    outTL.a.valid := canSend
+
+    when(canSend)
+    {
+      SynthesizePrintf("CANSEND\n")
+    }
+
+
+
+    when (outTL.d.valid)
+    {
+      SynthesizePrintf("Received back the request\n")
+    }
+
+    when (outTL.d.fire)
+    {
+      SynthesizePrintf("Sending back the request 0x%x size 0x%x source: %d\n", outTL.d.bits.data, outTL.d.bits.size, outTL.d.bits.source)
+    }
+    // Optional: forward D channel back
+    inTL.d <> outTL.d
+
+    // Debug prints
+    when(inTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] got request id: %d\n", inTL.a.bits.source) }
+    when(outTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] forwarded request 0x%x\n", forwardReg.size) }
+    when (outTL.a.ready)
+    {
+      SynthesizePrintf("outTL.a.ready 0x%x %d\n", forwardReg.address, canSend)
+    }
+    when (cpuNode.in(0)._1.a.valid)
+    {
+      SynthesizePrintf("[UncachedRegion] in.a.valid 0x%x\n", cpuNode.in(0)._1.a.bits.address)
+    }
+  }
+}
+
+
+
+
+
+
+class DTUCachedRegionManager(implicit p: Parameters) extends LazyModule {
+  val device = new SimpleDevice("dturegion", Seq("dtu,region"))
+  val beatBytes = 8
+  val maxDRAM = math.pow(2, 33).toLong
+  val addr = AddressSet.misaligned(maxDRAM, (BigInt(1) << 47) - maxDRAM)
+  println(addr)
+  val node = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
+    address = addr,
+    resources = device.reg,
+    regionType = RegionType.UNCACHED,
+    executable = false,
+    supportsGet = TransferSizes(64, 64),
+    supportsPutFull = TransferSizes(64, 64),
+    supportsPutPartial = TransferSizes(64, 64),
+    fifoId = Some(0))), beatBytes)))
+
+  lazy val module = new LazyModuleImp(this) {
+    
+    val (tl, edge) = node.in(0)
+    when (tl.a.fire)
+    {
+      SynthesizePrintf("DTUCACHEDREGIONMANAGER FIRE\n");
+    }
+    
+    val tlInParams = tl.params
+    val currentlyBeating = RegInit(false.B)
+    val currentRequest = Wire(Decoupled(new TLBundleD(tlInParams)))
+
+    val inAReq = Reg(new TLBundleA(tlInParams))
+    inAReq := Mux(tl.a.fire, tl.a.bits, inAReq)
+
+    currentRequest.bits := edge.AccessAck(inAReq, 0x6969.U)
+    currentRequest.valid := currentlyBeating
+    val (d_first, d_last, d_done, beatCount, count) = edge.firstlast2(currentRequest)
+    currentlyBeating := Mux(currentlyBeating, !d_done, tl.a.fire)
+
+    tl.d <> currentRequest
+    tl.a.ready := !currentlyBeating
+    when (tl.d.fire)
+    {
+      SynthesizePrintf("[DTUCachedRegionManager] ==> sent reply to 0x%x with data: 0x%x\n", inAReq.address, currentRequest.bits.data)
+    }
+    //assert(!tl.a.valid)
+  }
+}
 
 
 
