@@ -17,18 +17,18 @@ import _root_.subsystem.rme.subsystem.rme.ScratchPadIO
 
 
 
-class ScratchPadRME(params: RelMemParams) extends Module {
-
-    val cacheLineSize = 64
-    val metaDataSize = log2Ceil(params.rmeAddressSize) // we need to be able to store every offset
-
-    val io = IO(new Bundle {
-        val dataSPMIO = ScratchPadIO(params.DataSPMSize, cacheLineSize + metaDataSize) // [metadata|cache-line data]
-    })
-
-
-    val CachelineSPM = Module(new ScratchPadMemBank(params.DataSPMSize, cacheLineSize))
-    CachelineSPM.io <> io.dataSPMIO
-
-    
-}
+//class ScratchPadRME(params: RelMemParams) extends Module {
+//
+//    val cacheLineSize = 64
+//    val metaDataSize = log2Ceil(params.rmeAddressSize) // we need to be able to store every offset
+//
+//    val io = IO(new Bundle {
+//        val dataSPMIO = ScratchPadIO(params.DataSPMSize, cacheLineSize + metaDataSize) // [metadata|cache-line data]
+//    })
+//
+//
+//    val CachelineSPM = Module(new ScratchPadMemBank(params.DataSPMSize, cacheLineSize))
+//    CachelineSPM.io <> io.dataSPMIO
+//
+//    
+//}
