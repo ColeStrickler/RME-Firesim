@@ -17,27 +17,36 @@ import agu.AGUParams
 
 
 
-case class RequestDescriptor(maxID : Int) extends Bundle
+case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
 {
-    val baseID = UInt(log2Ceil(maxID).W)
-    val allocID = UInt(log2Ceil(maxID).W)
+    val baseID = UInt(log2Ceil(inMaxID).W)
+    val allocID = UInt(log2Ceil(outmaxID).W)
     val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
     val discardFront = UInt(7.W)
     val discardBack = UInt(7.W)
     val beatCount = UInt(4.W)
 }
 
-case class RequestorTrapperPort(params : TLBundleParameters) extends Bundle
+
+case class TrapperReq(params : TLBundleParameters, relmemParams : RelMemParams) extends Bundle
 {
-    val Request = DecoupledIO(Output(new TLBundleA(params))) // Send request to fetch unit 
+    val BaseRequest = Output(new TLBundleA(params))
+    val configMatch = Output(UInt(log2Ceil(relmemParams.maxConfigs).W))
+}
+
+// We want to change the entire thing to be wrapped in decoupledIO so that we can put in queue
+case class RequestorTrapperPort(params : TLBundleParameters, relmemParams : RelMemParams) extends Bundle
+{
+   // val Request = DecoupledIO(Output(new TLBundleA(params))) // Send request to fetch unit 
+    val trapperReq = DecoupledIO(TrapperReq(params, relmemParams))
 }
 
 
-case class RequestorFetchUnitPort(params: TLBundleParameters, maxID: Int) extends Bundle
+case class RequestorFetchUnitPort(inParams: TLBundleParameters, outParams: TLBundleParameters, inMaxID:Int, outmaxID : Int) extends Bundle
 {
-    val FetchReq = Output(new TLBundleA(params))
-    val BaseReq = Output(new TLBundleA(params))
-    val descriptor = Output(new RequestDescriptor(maxID))
+    val FetchReq = Output(new TLBundleA(outParams))
+    val BaseReq = Output(new TLBundleA(inParams))
+    val descriptor = Output(new RequestDescriptor(inMaxID, outmaxID))
 }
 
 case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
@@ -55,7 +64,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val tlOutParams = tlOutEdge.bundle
         //val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
         val tlInParams = tlInEdge.bundle
-        val maxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
+        val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+        val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
+
 
          def divideCeil(a: UInt, b: UInt): UInt = {
             (a + b - 1.U) / b
@@ -65,18 +76,18 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         val io = IO(new Bundle {
             // Fetch Unit Port
-            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))
+            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))
             //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
             //val isBaseRequest = Output(Bool())
 
             // Control Unit Port
-            val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(maxID)))
+            val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(outMaxID)))
 
             // Config Port
-            val Config = Flipped(RMEConfigPortIO())
+            val Config = Flipped(RMEConfigPortIO(params))
 
             // Trapper Port
-            val Trapper = Flipped(RequestorTrapperPort(tlInParams))
+            val Trapper = Flipped(RequestorTrapperPort(tlInParams, params))
 
             val agu = new RequestorAGUPort()
 
@@ -85,7 +96,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val CacheLineSize = 64 // cache line size in bytes
 
         // this isn't entirely flexible, assumes 1 bit source expansion
-        val id_allocator = Module(new IDAllocator(math.pow(2, tlInParams.sourceBits-1).toInt, maxID))
+        val id_allocator = Module(new IDAllocator(math.pow(2, tlOutParams.sourceBits-1).toInt, outMaxID))
         
     
 
@@ -99,12 +110,28 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         */
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
-        val requestQueue = Module(new Queue(new TLBundleA(tlInParams), 16, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, maxID), 64, flow=true)) // prevent stalls
-        val baseRequest = Reg(new TLBundleA(tlOutParams))
+        val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 16, flow=true))
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 64, flow=true)) // prevent stalls
+        val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
 
+                /*
+            This will give the start of the physical range that we are in
+        */
+        val config_physStart = io.Config.EphemeralRegionConfig_PhysStart(requestQueue.io.deq.bits.configMatch)
+
+        /*
+            The size will be the same for the allocated ephemeral backing and the physical range
+        */
+        val config_size = io.Config.EphemeralRegionConfig_Size(requestQueue.io.deq.bits.configMatch)
+
+        /*
+            We use this config parameter so we can allocate the physical region set aside into different pieces
+        */
+        val EphemeralRegionConfig_Start = io.Config.EphemeralRegionConfig_Start(requestQueue.io.deq.bits.configMatch)
+
+        val newReqOffset = (requestQueue.io.deq.bits.BaseRequest.address - config_physStart)(31, 0)
 
 
 
@@ -116,7 +143,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val sumColWidths = (io.Config.ColumnWidths*io.Config.EnabledColumnCount).pad(32)
         val nDescriptors = RegInit(0.U(8.W))
         nDescriptors := 64.U/io.Config.ColumnWidths
-        val requestOffset = (requestQueue.io.deq.bits.address - params.rmeaddress.U)(31, 0)
+        val backingEphemeralRegionStart = RegInit(0.U(33.W))
+        val requestOffset = RegInit(0.U(32.W))
+        backingEphemeralRegionStart := Mux(requestQueue.io.deq.fire, EphemeralRegionConfig_Start, backingEphemeralRegionStart)
+        requestOffset := Mux(requestQueue.io.deq.fire, newReqOffset, requestOffset)
         //row := requestRow
         val nDescriptorsSent = RegInit(0.U(8.W))
         //val nSentForProcessing = RegInit(0.U(8.W))
@@ -131,8 +161,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         */
         stateReg := stateReg
         baseRequest := baseRequest
-        requestQueue.io.enq <> io.Trapper.Request // queue up requests to prevent stalls
-        io.Trapper.Request.ready := requestQueue.io.enq.ready
+        requestQueue.io.enq <> io.Trapper.trapperReq  // queue up requests to prevent stalls
+        io.Trapper.trapperReq.ready := requestQueue.io.enq.ready
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
@@ -158,7 +188,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         id_allocator.io.newID.ready := false.B
 
 
-        outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(tlInParams, maxID))
+        outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))
         outQueue.io.enq.valid := false.B
 
         io.FetchUnit.bits := outQueue.io.deq.bits
@@ -196,7 +226,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 nDescriptorsSent := 0.U
                // nSentForProcessing := 0.U
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
-                baseRequest := requestQueue.io.deq.bits
+                baseRequest := requestQueue.io.deq.bits.BaseRequest
                 io.agu.offsetAddrFromBase.valid := false.B
                 io.agu.offsetAddrFromBase.bits := 0.U
                // io.agu.doGen.bits := false.B
@@ -210,7 +240,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 */
                 sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
                 io.agu.offsetAddrFromBase.valid := !sentAddrAGU
-                io.agu.offsetAddrFromBase.bits := baseRequest.address-(params.rmeaddress-params.rmeShift).U
+                io.agu.offsetAddrFromBase.bits := newReqOffset
                 SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
 
 
@@ -233,15 +263,15 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
                 val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
 
-                val sendRequest = Wire(Valid(new TLBundleA(tlInParams)))
+                val sendRequest = Wire(Valid(new TLBundleA(tlOutParams)))
                 sendRequest.bits := baseRequest
-                sendRequest.bits.address := R_i_j + (params.rmeaddress - params.rmeShift).U // we changed this
+                sendRequest.bits.address := R_i_j + backingEphemeralRegionStart
                 sendRequest.bits.size := sizeField
                 sendRequest.valid := true.B // i think since we switch states we can always set this valid
                 
 
                 id_allocator.io.newID.ready := outQueue.io.enq.ready && io.agu.offset.valid // we should then fire, claim id and advance
-                val descriptorOut = Wire(RequestDescriptor(maxID))
+                val descriptorOut = Wire(RequestDescriptor(inMaxID, outMaxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.allocID := id_allocator.io.newID.bits
                 descriptorOut.requestPlacement := nDescriptorsSent
@@ -264,10 +294,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (outQueue.io.enq.fire)
                 {
-                    assert(baseRequest.address >= (params.rmeaddress - params.rmeShift).U && baseRequest.address <= (params.rmeaddress - params.rmeShift + params.rmeAddressSize).U)
+                    //assert(baseRequest.address >= (params.rmeaddress - params.rmeShift).U && baseRequest.address <= (params.rmeaddress - params.rmeShift + params.rmeAddressSize).U)
                     SynthesizePrintf("outQueue.io.enq.fire %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x\n", nBeats, baseRequest.base.address)
+                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x %d\n", nBeats, baseRequest.address, baseRequest.source)
                     SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)

@@ -21,20 +21,17 @@ import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
-import _root_.subsystem.rme.subsystem.rme.toRMEConditionalDemuxA
 import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
+
 case class RelMemParams (
     regaddress: Int = 0x3000000,
-    rmeaddress: BigInt = 0x118000000L,
-    rmeShift : Int =       0x8000000,
-    rmeAddressSize: BigInt = 0x8000000,
+    rmeaddress: BigInt =     0x170000000L,
+    rmeAddressSize: BigInt =  0x10000000L,
     controlBeatBytes : Int = 8,
-    DataSPMSize : Int = 1024,
-    MetadataSPMSize : Int = 1024,
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = true,
-    //minSource : Int = 16
+    maxConfigs : Int = 1,
 )
 
 
@@ -65,13 +62,27 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   val aguctlnode = agu.ctlnode
     
   
-  val dtu_cached_region = LazyModule(new DTUCachedRegionManager)
+  
+
+  val device2 = new SimpleDevice("dturegion", Seq("dtu,region"))
+  val beatBytes = 8
+  val maxDRAM = math.pow(2, 33).toLong
+  val addr2 = AddressSet.misaligned(maxDRAM, (BigInt(1) << 47) - maxDRAM)
+  val dtu_cached_region = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
+    address = addr2,
+    resources = device2.reg,
+    regionType = RegionType.UNCACHED,
+    executable = true,
+    supportsGet = TransferSizes(64, 64),
+    supportsPutFull = TransferSizes(64, 64),
+    supportsPutPartial = TransferSizes(64, 64),
+    //supportsAcquireB = TransferSizes(64, 64), // cache cork should save us
+    //supportsAcquireT = TransferSizes(64, 64),// cache cork should save us
+    fifoId = Some(0))), beatBytes = beatBytes /*,endSinkId = 1*/ )))
  // val dtu_uncached_region = LazyModule(new DTUUncachedRegion)
 
-    def ToRME(addr : UInt) : Bool = {
-        val torme : Bool = false.B //addr >= params.rmeaddress.U && addr <= (params.rmeaddress + params.rmeAddressSize).U
-        torme
-    }
+
+    
 
     def UnmaskedAddress(addr: UInt) : UInt = {
         val unmaskedAddr = addr + ((params.rmeAddressSize + 1)/2).U
@@ -97,7 +108,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-    val config = Wire(RMEConfigPortIO())
+    val config = Wire(RMEConfigPortIO(params))
      // Registers
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
@@ -115,6 +126,26 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_FetchToMemoryStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_CtrlToTrapperStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_ReqDescFullStall =     if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
+        val r_EphemeralRegionConfig_Start = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(33.W))))
+        val r_EphemeralRegionConfig_Size = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(log2Ceil(params.rmeAddressSize).W))))
+        val r_EphemeralRegionConfig_PhysStart = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(47.W))))
+
+
+
+        def CheckConfigHit(addr: UInt) : UInt = {
+            //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
+            val hits = (0 until params.maxConfigs).map { i =>
+              val start = r_EphemeralRegionConfig_Start(i)
+              val size  = r_EphemeralRegionConfig_Size(i)
+              (addr >= start) && (addr < (start + size))
+            }
+            val numHits = PopCount(VecInit(hits)) // counts how many are true
+            assert(numHits > 0.U, "Address matches less than one ephemeral region!")
+            assert(numHits === 1.U, "Address matches more than one ephemeral region!")
+
+            val hitIndex = PriorityEncoder(hits)
+            hitIndex
+        }
 
        println(s"params.withPerfCounter = ${params.withPerfCounter}")
        require(params.withPerfCounter, "Performance counters must be enabled for this code to run.")
@@ -145,11 +176,41 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       val mmio_FrameOffset = Seq((15 * 0x10 + 0x48) -> Seq(RegField(r_FrameOffset.getWidth, r_FrameOffset, RegFieldDesc("FrameOffset", "FrameOffset"))))
       val mmio_Reset = Seq((16 * 0x10 + 0x48) -> Seq(RegField(r_Reset.getWidth, r_Reset, RegFieldDesc("RMEReset", "RmeReset"))))
+         /*
+                    
+            val config_physStart = io.Config.EphemeralRegionConfig_PhysStart(matchedConfig)
+            val config_size = io.Config.EphemeralRegionConfig_Size(matchedConfig)
+            val EphemeralRegionConfig_Start = io.Config.EphemeralRegionConfig_Start(matchedConfig)
+
+
+            From these we get the offset via --> offset = TLInA.bits.addr - config_physStart
+
+
+            EphemeralRegionConfig_Start is the base of the data region. We use these so we can have an allocator
+            split up the region. With the absolute offset we can calculate the offsets of the data pieces that and add those onto
+            EphemeralRegionConfig_Start. 
+
+            we can just simply pass in the matched config to the Requestor
+        
+        */
+
+
+      val mmio_EphemeralConfigStart = r_EphemeralRegionConfig_Start.zipWithIndex.map {case (reg, i) => 
+          (i * 0x8 + 0x400) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"r_EphemeralRegionConfig_Start${i}", "r_EphemeralRegionConfig_Start")))    
+      }
+      val mmio_EphemeralConfigSize  = r_EphemeralRegionConfig_Size.zipWithIndex.map {case (reg, i) => 
+          (i * 0x8 + params.maxConfigs*0x8 + 0x400) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"r_EphemeralRegionConfig_Size${i}", "r_EphemeralRegionConfig_Size")))    
+      }
+
+      val mmio_EphemeralRegionConfig_PhysStart = r_EphemeralRegionConfig_PhysStart.zipWithIndex.map {case (reg, i) => 
+          (i * 0x8 + 2*params.maxConfigs*0x8 + 0x400) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"r_EphemeralRegionConfig_PhysStart${i}", "r_EphemeralRegionConfig_PhysStart")))    
+      }
 
 
      
       val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
-                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters
+                  mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters ++
+                  mmio_EphemeralConfigStart ++ mmio_EphemeralConfigSize ++ mmio_EphemeralRegionConfig_PhysStart
       val regmap = ctlnode.regmap(mmreg: _*)
 
       config.RowSize := r_RowSize
@@ -158,6 +219,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       config.FrameOffset := r_FrameOffset
       config.ColumnWidths := r_ColumnWidths
       config.Enabled := r_EnableRME
+      config.EphemeralRegionConfig_PhysStart := r_EphemeralRegionConfig_PhysStart
+      config.EphemeralRegionConfig_Size := r_EphemeralRegionConfig_Size
+      config.EphemeralRegionConfig_Start := r_EphemeralRegionConfig_Start
 
       for (i <- 0 until r_ColumnOffsets.length)
       {
@@ -208,7 +272,14 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val outParams = out_edge.bundle
       val inParams = in_edge.bundle
 
-      val maxID = (math.pow(2, inParams.sourceBits)-1).toInt
+      val (cachedRegionIn, cachedRegionEdge) = dtu_cached_region.in(i)
+      val cachedParams = cachedRegionEdge.bundle
+
+      val inMaxID = (math.pow(2, cachedParams.sourceBits)-1).toInt
+      val outMaxID = (math.pow(2, outParams.sourceBits)-1).toInt
+
+      println(f"\n\ninMaxID ${inMaxID} ${cachedParams.sourceBits} outMaxID ${outMaxID} bits ${outParams.sourceBits} ${inParams.sourceBits}\n\n")
+
       out.b <> in.b
       out.c <> in.c
       out.e <> in.e
@@ -220,8 +291,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //val rme_reply_queue = Module(new Queue(new TLBundleD(inParams), 128, flow=false))
       
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
-      val trapper = Module(new TrapperRME(params, in_edge, out_edge, in, i))
-      val requestor = Module(new RequestorRME(params, in_edge, out_edge, out, 0))
+      val trapper = Module(new TrapperRME(params, cachedRegionEdge, out_edge, in, i))
+      val requestor = Module(new RequestorRME(params, cachedRegionEdge, out_edge, out, 0))
 
       
 
@@ -231,12 +302,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       val fetch_units : Vec[FetchUnitIO] = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
-        val fetch_unit = Module(new FetchUnitRME(params, node, in_edge, i, j))
+        val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, i, j))
         fetch_unit.io
       })
 
 
-      val control_unit = Module(new ControlUnitRME(params, out_edge, out, i))
+      val control_unit = Module(new ControlUnitRME(params, out_edge, cachedRegionEdge, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
       //when (in.d.fire)
       //{
@@ -245,16 +316,37 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       /*
         Input and output of RME
       */
-      val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
-      val isWritebackToRME = ToRME(in.a.bits.address) && !(in.a.bits.opcode === TLMessages.Get)
-      val demux = Module(new toRMEConditionalDemuxA(in_edge.bundle, params))
-      demux.io.dataIn <> in.a
-      demux.io.sel := isRMERequest && !isWritebackToRME 
-      demux.io.isWriteback := false.B //isWritebackToRME && config.Enabled
-      trapper.io.TLInA <> demux.io.outB
+      //val isRMERequest = ToRME(in.a.bits.address) && (in.a.bits.opcode === TLMessages.Get) && config.Enabled
+      //val isWritebackToRME = ToRME(in.a.bits.address) && !(in.a.bits.opcode === TLMessages.Get)
+      //val demux = Module(new toRMEConditionalDemuxA(in_edge.bundle, params))
+      //demux.io.dataIn <> in.a
+      //demux.io.sel := isRMERequest && !isWritebackToRME 
+      //demux.io.isWriteback := false.B //isWritebackToRME && config.Enabled
+      //trapper.io.TLInA <> demux.io.outB
       //trapper.io.TLInA.bits.address := UnmaskedAddress(demux.io.outB.bits.address)
       
 
+      val dtu_cached_in_a = Wire(Decoupled(new TLBundleA(cachedParams)))
+
+      dtu_cached_in_a.bits := cachedRegionIn.a.bits
+      dtu_cached_in_a.valid := cachedRegionIn.a.valid
+      cachedRegionIn.a.ready := dtu_cached_in_a.ready
+      dtu_cached_in_a.ready := trapper.io.TLInA.ready
+      //dtu_cached_region.in(0)._1.a.ready := RegNext(dtu_cached_region.in(0)._1.a.valid) // dtu_cached_in_a.ready
+
+      when( dtu_cached_region.in(0)._1.a.valid)
+      {
+        SynthesizePrintf(" dtu_cached_region.in(0)._1.a.valid 0x%x\n",  dtu_cached_region.in(0)._1.a.bits.address)
+      }
+
+
+      trapper.io.Config := config
+      trapper.io.TLInA <> dtu_cached_in_a
+      cachedRegionIn.d <> trapper.io.TLInD
+
+
+
+       in.d <> replyFromDRAMDemux.io.outA
   
       replyFromDRAMDemux.io.dataIn <> out.d
       //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
@@ -307,11 +399,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       // Either from trapper or directly from DRAM if not an rme request
-      TLArbiter.robin(in_edge, in.d, trapper.io.TLInD, replyFromDRAMDemux.io.outA)
+      //TLArbiter.robin(in_edge, in.d, replyFromDRAMDemux.io.outA)
+      in.d <> replyFromDRAMDemux.io.outA
 
       // Outgoing arbiter for passthrough and RME requests
       val fetch_unit_outbound = fetch_units.map(fetch_unit => fetch_unit.OutReq)
-      TLArbiter.robin(out_edge, out.a, (Seq(demux.io.outA) ++ fetch_unit_outbound):_*) // we have to pass as a single Seq i guess
+      TLArbiter.robin(out_edge, out.a, (Seq(in.a) ++ fetch_unit_outbound):_*) // we have to pass as a single Seq i guess
       
       if (params.withPerfCounter)
       {
@@ -334,9 +427,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         Connections between RME modules
       */
 
-      requestor.io.Trapper.Request.bits := trapper.io.Requestor.Request.bits
-      requestor.io.Trapper.Request.valid := trapper.io.Requestor.Request.valid
-      trapper.io.Requestor.Request.ready := requestor.io.Trapper.Request.ready
+      requestor.io.Trapper.trapperReq <> trapper.io.Requestor.trapperReq
 
 
       trapper.io.ControlUnit <> control_unit.io.TrapperPort
@@ -389,17 +480,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         
       }
 
-      //val fetch_units_req_arb = Module(new RRArbiter(new RequestorFetchUnitPort(inParams), params.nFetchUnits))
-      //fetch_units_req_arb.io.ou
 
-
-      //fetch_unit.io.FetchReq.valid := requestor.io.FetchReq.valid
-      //requestor.io.FetchReq.ready := fetch_unit.io.FetchReq.ready
-      //fetch_unit.io.FetchReq.bits := requestor.io.FetchReq.bits
-      //fetch_unit.io.isBaseRequest := requestor.io.isBaseRequest
-
-      //fetch_unit.io.Requestor.valid := requestor.io.FetchUnit.valid
-      //requestor.io.FetchUnit.ready := fetch_unit.io.Requestor.ready
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       
          
@@ -420,7 +501,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       .otherwise
       {
-          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, maxID), params.nFetchUnits))
+          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID), params.nFetchUnits))
           ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
           control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
       }
@@ -453,11 +534,6 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //printf(p"Arbiter Out: valid=${ctrl_unit_arb.io.out.valid}, ready=${ctrl_unit_arb.io.out.ready}\n")
       requestor.io.ControlUnit <> control_unit.io.RequestorPort
 
-      // we need some extra logic here before we can do this with an arbiter
-      // we need to make sure that we aren't packing separate requests
-      //control_unit.io.FetchUnitPort.bits := fetch_unit.io.ControlUnit.bits
-      //control_unit.io.FetchUnitPort.valid := fetch_unit.io.ControlUnit.valid
-      //fetch_unit.io.ControlUnit.ready := control_unit.io.FetchUnitPort.ready
 
 
 
@@ -492,10 +568,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
     }
     
-    //TLArbiter.robin(out_edge, out.a, in.a, manager_in.a)
 
-    //manager_in.d.bits := manager_in_edge.AccessAck(manager_in.a.bits, 0x6969.U)
-    //manager_in.d.valid := manager_in_edge.done(manager_in.a)
 
   
 
@@ -534,7 +607,7 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
 
       mbus.coupleTo("dtu_cached_region") {
-        mbus.rme.get.dtu_cached_region.node := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
+        mbus.rme.get.dtu_cached_region := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
       }
 
     //val uncached = LazyModule(new DTUUncachedRegion)

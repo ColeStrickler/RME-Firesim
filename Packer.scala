@@ -13,17 +13,17 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class PackerColExtractIO(maxID : Int) extends Bundle {
+case class PackerColExtractIO(inMaxID:Int, outmaxID : Int) extends Bundle {
     val dataIn = Output(UInt(512.W))
     val dataSize = Output(UInt(10.W))
-    val descriptorIn = Output(RequestDescriptor(maxID))
+    val descriptorIn = Output(RequestDescriptor(inMaxID, outmaxID))
 }
 
 
-class PackerRME(maxID: Int) extends Module {
+class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
 
     val io = IO(new Bundle {
-        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(maxID)))
+        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(inMaxID, outmaxID)))
         val PackedLine = DecoupledIO(UInt(512.W))
         val nPacked = Output(UInt(7.W))
     })

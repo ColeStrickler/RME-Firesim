@@ -29,7 +29,7 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
     val retireID = Flipped(Decoupled(UInt(log2Ceil(maxID).W)))
   })
 
-  val queue_depth = maxID-minID+1 // should always have room for retirement --> we don't check ready signal in ControlUnit
+  val queue_depth = math.min(maxID-minID+1, minID+64) // should always have room for retirement --> we don't check ready signal in ControlUnit
   val queue = Module(new Queue(UInt(log2Ceil(maxID).W), queue_depth))
   queue.io.enq <> io.retireID
   io.newID <> queue.io.deq
@@ -39,6 +39,9 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
 
   val initDone = RegInit(false.B)
   val IDValues = VecInit((minID to maxID).map(i => i.U))
+  println(f"IDAllocator allocating ${minID} to ${maxID}")
+
+
   val initCounter = RegInit(0.U(log2Ceil(queue_depth).W))
 
 
@@ -218,57 +221,57 @@ class ConditionalDemuxA(params: TLBundleParameters) extends Module {
   }
 }
 
-
-class toRMEConditionalDemuxA(params: TLBundleParameters, rmeParams: RelMemParams) extends Module {
-  val io = IO(new Bundle {
-    val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
-    val sel    = Input(Bool())   // Selector (1-bit)
-    val isWriteback = Input(Bool())
-    val outA   = DecoupledIO(new TLBundleA(params))// Output to location A
-    val outB   = DecoupledIO(new TLBundleA(params)) // Output to location B
-  })
-
-  // Default both outputs to zero
-  val readyOther = Reg(Bool()) // so we have somewhere to connect it to
-
-  val dummyMessage = Wire(new TLBundleA(params))
-  dummyMessage.opcode := 0.U
-  dummyMessage.param := 0.U
-  dummyMessage.size := 0.U
-  dummyMessage.source := 0.U
-  dummyMessage.address := 0.U
-  dummyMessage.mask := 0.U
-  dummyMessage.data := 0.U
-  dummyMessage.corrupt := false.B
-
-  
-  //when (io.sel)
-  //{
-  //  SynthesizePrintf("Selector = 1\n")
-  //}
-
-
-
-  // Route input based on selector
-  when(io.sel) {
-    io.outB <> io.dataIn
-    io.outB.bits.address := io.dataIn.bits.address - (rmeParams.rmeShift).U
-    io.outA.bits := dummyMessage
-    io.outA.valid := false.B
-    readyOther := io.outA.ready
-  }.otherwise {
-    io.outA <> io.dataIn
-    io.outB.bits := dummyMessage
-    io.outB.valid := false.B
-    readyOther := io.outB.ready
-  }
-}
-
-
-
-
-
-
+//
+//class toRMEConditionalDemuxA(params: TLBundleParameters, rmeParams: RelMemParams) extends Module {
+//  val io = IO(new Bundle {
+//    val dataIn = Flipped(DecoupledIO(new TLBundleA(params))) // Single input (8-bit)
+//    val sel    = Input(Bool())   // Selector (1-bit)
+//    val isWriteback = Input(Bool())
+//    val outA   = DecoupledIO(new TLBundleA(params))// Output to location A
+//    val outB   = DecoupledIO(new TLBundleA(params)) // Output to location B
+//  })
+//
+//  // Default both outputs to zero
+//  val readyOther = Reg(Bool()) // so we have somewhere to connect it to
+//
+//  val dummyMessage = Wire(new TLBundleA(params))
+//  dummyMessage.opcode := 0.U
+//  dummyMessage.param := 0.U
+//  dummyMessage.size := 0.U
+//  dummyMessage.source := 0.U
+//  dummyMessage.address := 0.U
+//  dummyMessage.mask := 0.U
+//  dummyMessage.data := 0.U
+//  dummyMessage.corrupt := false.B
+//
+//  
+//  //when (io.sel)
+//  //{
+//  //  SynthesizePrintf("Selector = 1\n")
+//  //}
+//
+//
+//
+//  // Route input based on selector
+//  when(io.sel) {
+//    io.outB <> io.dataIn
+//    io.outB.bits.address := io.dataIn.bits.address - (rmeParams.rmeShift).U
+//    io.outA.bits := dummyMessage
+//    io.outA.valid := false.B
+//    readyOther := io.outA.ready
+//  }.otherwise {
+//    io.outA <> io.dataIn
+//    io.outB.bits := dummyMessage
+//    io.outB.valid := false.B
+//    readyOther := io.outB.ready
+//  }
+//}
+//
+//
+//
+//
+//
+//
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.diplomacy._
@@ -292,7 +295,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
   // 2. Outgoing to MBUS (master)
   val memNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
     name = "SimpleForwardClient",
-    sourceId = IdRange(0, 256)
+    sourceId = IdRange(0, 7)
   )))))
   //memNode := cpuNode
   lazy val module = new LazyModuleImp(this) {

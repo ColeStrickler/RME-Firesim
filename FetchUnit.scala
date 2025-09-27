@@ -12,18 +12,18 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class FetchUnitControlPort(tlParams : TLBundleParameters, maxID : Int) extends Bundle
+case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, outMaxID : Int) extends Bundle
 {
     val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
     val baseReq = Output(new TLBundleA(tlParams))
-    val descriptor = Output(new RequestDescriptor(maxID))
+    val descriptor = Output(new RequestDescriptor(inMaxID, outMaxID))
 }
 
 
-case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, maxID : Int) extends Bundle
+case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, inMaxID : Int, outMaxID : Int) extends Bundle
 {
 // Requestor Port
-        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, maxID))) // Receive address to request from the Requestor Module]
+        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))) // Receive address to request from the Requestor Module]
         //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
         //val isBaseRequest = Flipped(Output(Bool()))
         //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
@@ -42,7 +42,7 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
         
         
         // Control Unit Port
-        val ControlUnit = Decoupled(FetchUnitControlPort(tlOutParams, maxID))
+        val ControlUnit = Decoupled(FetchUnitControlPort(tlInParams, inMaxID, outMaxID))
 
 }
 
@@ -57,20 +57,22 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
     
 */
 
-class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdgeIn, instance: Int, subInstance: Int)(
+class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdge: TLEdgeIn, instance: Int, subInstance: Int)(
     implicit p: Parameters) extends Module {
 
     val (out, tlOutEdge) = adapter.out(instance)
     val tlOutA = out.a
     val tlOutD = out.d
     val tlOutParams = tlOutEdge.bundle
-    val maxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
-    val io = IO(new FetchUnitIO(tlInEdge.bundle, tlOutParams, maxID)).suggestName(s"fetchunitio_$instance-$subInstance")
+    val tlInParams = cachedRegionEdge.bundle
+    val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
+    val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+    val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID)).suggestName(s"fetchunitio_$instance-$subInstance")
 
     
         val fetchReq = Reg(new TLBundleA(tlOutParams))
-        val baseReq = Reg(new TLBundleA(tlOutParams))
-        val descriptor = Reg(new RequestDescriptor(maxID))
+        val baseReq = Reg(new TLBundleA(tlInParams))
+        val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
         fetchReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, fetchReq)
         baseReq :=  Mux( io.Requestor.fire, io.Requestor.bits.BaseReq, baseReq)
         //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
@@ -165,7 +167,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, tlInEdge: TLEdg
         io.ControlUnit.bits.descriptor := descriptor
         when (dataRegFull)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor src %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor base src %d alloc source %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID, descriptor.allocID)
         }
   
         // we no longer have an active request when we send it to control unit

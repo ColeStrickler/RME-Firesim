@@ -22,47 +22,87 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 
 
 
-
 class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut, tlInBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends Module {
     val tlInParams = tlInEdge.bundle
-   // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
-    val io = IO(new Bundle {
-        val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
-        val TLInD = DecoupledIO(new TLBundleD(tlInParams))
-        
 
 
-
-        val Requestor = new RequestorTrapperPort(tlInParams)
-        val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
-
-    }).suggestName(s"trapper_$instance")
-    
     def ToRME(addr : UInt) : Bool = {
         val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + 0xfff.U)
         torme
     }
 
-    /*
-        We need to take in the A Channel and send requests back on the D channel
-    */
-    when (io.TLInA.fire)
-    {
-        SynthesizePrintf("[TRAPPER] ==> request in 0x%x\n", io.TLInA.bits.address)
+        def CheckConfigHit(addr: UInt) : UInt = {
+        //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
+        val hits = (0 until params.maxConfigs).map { i =>
+          val start = io.Config.EphemeralRegionConfig_PhysStart(i)
+          val size  = io.Config.EphemeralRegionConfig_Size(i)
+            SynthesizePrintf("addr >= 0x%x && addr <= 0x%x\n", start, start+size)
+          (addr >= start) && (addr < (start + size))
+        }
+        val numHits = PopCount(VecInit(hits)) // counts how many are true
+        assert(numHits > 0.U, "Address matches less than one ephemeral region!")
+        assert(numHits === 1.U, "Address matches more than one ephemeral region!")
+        val hitIndex = PriorityEncoder(hits)
+        hitIndex
     }
 
-   
-        // io.Requestor.Request.ready %d, io.Requestor.Request.valid %d\n", io.Requestor.Request.ready, io.Requestor.Request.valid)
-        //SynthesizePrintf("[TRAPPER] ==> io.TLInD.ready %d, io.TLInD.valid %d\n", io.TLInD.ready, io.TLInD.valid)
+
+   // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
+    val io = IO(new Bundle {
+        val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
+        val TLInD = DecoupledIO(new TLBundleD(tlInParams))
+        val Config = Flipped(RMEConfigPortIO(params))
+
+
+
+        val Requestor = new RequestorTrapperPort(tlInParams, params)
+        val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
+
+    }).suggestName(s"trapper_$instance")
+    
     
 
 
+    /*
+        We need to take in the A Channel and send requests back on the D channel
+    */
+       val matchedConfig = Wire(UInt(log2Ceil(params.maxConfigs).W))
+        matchedConfig := 0.U
+        when (io.TLInA.fire)
+        {
+            SynthesizePrintf("io.TLInA.address 0x%x --> %d size: %d\n", io.TLInA.bits.address, io.TLInA.bits.source, io.TLInA.bits.size)
+             matchedConfig := CheckConfigHit(io.TLInA.bits.address)
+        }
+        
 
-        io.Requestor.Request <> io.TLInA // I think we should also send this to the control unit to store metadata
+        /*
+                    
+            val config_physStart = io.Config.EphemeralRegionConfig_PhysStart(matchedConfig)
+            val config_size = io.Config.EphemeralRegionConfig_Size(matchedConfig)
+            val EphemeralRegionConfig_Start = io.Config.EphemeralRegionConfig_Start(matchedConfig)
 
 
-        //rme_in_queue.io.enq <> demux.io.outB
+            From these we get the offset via --> offset = TLInA.bits.addr - config_physStart
+
+
+            EphemeralRegionConfig_Start is the base of the data region. We use these so we can have an allocator
+            split up the region. With the absolute offset we can calculate the offsets of the data pieces that and add those onto
+            EphemeralRegionConfig_Start. 
+
+            we can just simply pass in the matched config to the Requestor
+        
+        */
+
+
+
+
+       
+
+        io.Requestor.trapperReq.valid := io.TLInA.valid // I think we should also send this to the control unit to store metadata
+        io.TLInA.ready := io.Requestor.trapperReq.ready
+        io.Requestor.trapperReq.bits.BaseRequest := io.TLInA.bits
+        io.Requestor.trapperReq.bits.configMatch := matchedConfig
 
         // Handle inbound request logic
 
@@ -103,7 +143,6 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         }
 
         currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)
-       // rme_reply_queue.io.deq.ready := !currentlyBeating // && request is ready
 
 
        // since we modify the size to be bus width granularity, we set it back here
@@ -121,7 +160,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         when (io.TLInD.fire)
         {
             //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
-            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x\n", baseReqUpdated.address, currentRequest.bits.data)
+            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source)
         }
         
         io.TLInD <> currentRequest
@@ -131,10 +170,4 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         //    SynthesizePrintf("[TRAPPER] --> currentlyBeating. io.TLInD.ready %d, d_done %d, count %d\n", io.TLInD.ready, d_done, count)
         //}
 
-      //currentlyBeating := d_first || (currentlyBeating && (beatCounter =/= inDBeats)) 
-      //rme_reply_queue.io.enq.valid := rme_in_queue.io.deq.valid 
-      //rme_in_queue.io.deq.ready := rme_reply_queue.io.enq.ready
-      //val dReply = in_edge.AccessAck(rme_in_queue.io.deq.bits, 0x6969.U)
-      //println("dReply.size: %d\n", dReply.size)  
-      //rme_reply_queue.io.enq.bits := dReply
 }

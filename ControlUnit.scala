@@ -25,20 +25,22 @@ case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle
 }
 
 
+// we only need the cached manager edge
 
-
-class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
+class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: TLEdgeIn, instance: Int) (
     implicit p: Parameters) extends Module {
 
-    val tlParams = tlOutEdge.bundle
-    val maxID = (math.pow(2, tlParams.sourceBits)-1).toInt
+    val tlParams = tlCachedEdge.bundle
+    val tlOutParams = tlOutEdge.bundle
+    val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+    val inMaxID = (math.pow(2, tlParams.sourceBits)-1).toInt
     val io = IO(new Bundle{
         // Config Port 
         //val Config = Input(RMEConfigPortIO())
 
 
         // Fetch Unit Port
-        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlOutEdge.bundle, maxID)))
+        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID)))
         val ID = Output(UInt(tlParams.sourceBits.W))
         val useID = Output(Bool())
 
@@ -48,7 +50,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
 
 
         // Requestor Port
-        val RequestorPort = Decoupled(ControlUnitRequestorPort(maxID))
+        val RequestorPort = Decoupled(ControlUnitRequestorPort(outMaxID))
 
     }).suggestName(s"ctrlrio_$instance")
     
@@ -77,9 +79,9 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdge, tlOutBundle: TLBun
         //}
         val currentlyPacking = RegInit(false.B)
         val BaseReq = Reg(new TLBundleA(tlParams))
-        val ColExtractor = Module(new ColumnExtractor(maxID))
-        val packer = Module(new PackerRME(maxID))
-        val descriptor = Reg(new RequestDescriptor(maxID))
+        val ColExtractor = Module(new ColumnExtractor(inMaxID, outMaxID))
+        val packer = Module(new PackerRME(inMaxID, outMaxID))
+        val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
 
 
 
