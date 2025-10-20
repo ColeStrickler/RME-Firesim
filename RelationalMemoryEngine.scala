@@ -55,6 +55,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     ResourceBinding {
       Resource(device, "reserved").bind(ResourceAddress(addr, rocketchip.resources.ResourcePermissions(true, true, false, false, true)))
     }
+
+    
+
     
     
   val node = TLAdapterNode()
@@ -64,14 +67,26 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   
   
 
-  val device2 = new SimpleDevice("dturegion", Seq("dtu,region"))
+  val device2 = new SimpleDevice("dtu_region", Seq("dturegion")) with HasReservedAddressRange {
+
+  }
+  //val mdev = new MemoryDevice with HasReservedAddressRange
+  
+
   val beatBytes = 8
   val maxDRAM = math.pow(2, 33).toLong
   val addr2 = AddressSet.misaligned(maxDRAM, (BigInt(1) << 47) - maxDRAM)
+  // ResourceBinding {
+  //  Resource(device2, "reserved").bind(ResourceAddress(addr2, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
+  //}
+
+
+
+
   val dtu_cached_region = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
     address = addr2,
-    resources = device2.reg,
     regionType = RegionType.UNCACHED,
+    //resources = mdev.reg,
     executable = true,
     supportsGet = TransferSizes(64, 64),
     supportsPutFull = TransferSizes(64, 64),
@@ -113,7 +128,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
-        val r_ColumnWidths = RegInit(0.U(6.W))
+        val r_ColumnWidths = RegInit(4.U(6.W)) // will change later
         val r_ColumnOffsets = RegInit(VecInit(Seq.fill(15)(0.U(7.W))))
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
@@ -186,7 +201,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
             From these we get the offset via --> offset = TLInA.bits.addr - config_physStart
 
 
-            EphemeralRegionConfig_Start is the base of the data region. We use these so we can have an allocator
+            EphemeralRegionConfig_Start is the base of the data region that we update through. We use these so we can have an allocator
             split up the region. With the absolute offset we can calculate the offsets of the data pieces that and add those onto
             EphemeralRegionConfig_Start. 
 
@@ -327,17 +342,20 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
 
       val dtu_cached_in_a = Wire(Decoupled(new TLBundleA(cachedParams)))
-
+      when (cachedRegionIn.a.valid)
+      {
+        SynthesizePrintf("cachedRegionIn.a.valid\n")
+      }
       dtu_cached_in_a.bits := cachedRegionIn.a.bits
       dtu_cached_in_a.valid := cachedRegionIn.a.valid
       cachedRegionIn.a.ready := dtu_cached_in_a.ready
       dtu_cached_in_a.ready := trapper.io.TLInA.ready
       //dtu_cached_region.in(0)._1.a.ready := RegNext(dtu_cached_region.in(0)._1.a.valid) // dtu_cached_in_a.ready
 
-      when( dtu_cached_region.in(0)._1.a.valid)
-      {
-        SynthesizePrintf(" dtu_cached_region.in(0)._1.a.valid 0x%x\n",  dtu_cached_region.in(0)._1.a.bits.address)
-      }
+      //when( dtu_cached_region.in(0)._1.a.valid)
+      //{
+      //  SynthesizePrintf(" dtu_cached_region.in(0)._1.a.valid 0x%x\n",  dtu_cached_region.in(0)._1.a.bits.address)
+      //}
 
 
       trapper.io.Config := config
@@ -352,16 +370,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //fetch_unit.io.inReply <> replyFromDRAMDemux.io.outB
      // SynthesizePrintf("Cycle");
    
-      when (in.a.fire)
-      {
-        SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
-      }   
+      //when (in.a.fire)
+      //{
+      //  SynthesizePrintf(s"in.a.fire ${in.a.fire} 0x%x\n", in.a.bits.address)
+      //}   
 
       
-      when (in.d.fire)
-      {
-        SynthesizePrintf("in.d.fire\n")
-      }
+      //when (in.d.fire)
+      //{
+      //  SynthesizePrintf("in.d.fire\n")
+      //}
 
       //when (out.a.fire)
       //{
@@ -392,10 +410,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         }
       }
 
-      when (out.d.fire)
-      {
-        SynthesizePrintf("dram resp %d\n", in.d.bits.source)
-      }
+      //when (out.d.fire)
+      //{
+      //  SynthesizePrintf("dram resp %d\n", in.d.bits.source)
+      //}
 
 
       // Either from trapper or directly from DRAM if not an rme request
@@ -425,7 +443,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       /*
         Connections between RME modules
+
+
+        We can just use trapper.io.Requestor.trapperReq.bits.configMatch to route to the correct one
       */
+      
 
       requestor.io.Trapper.trapperReq <> trapper.io.Requestor.trapperReq
 
@@ -579,9 +601,10 @@ trait CanHaveRME extends {
   val dtu_uncached_region : Option[DTUUncachedRegion]
 }
 
-trait HasReservedAddressRange extends SimpleDevice {
+trait HasReservedAddressRange extends Device {
   hasReservedRange = true
 }
+
 
 
 class WithRME() extends Config((site, here, up) => {
@@ -613,11 +636,11 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
     //val uncached = LazyModule(new DTUUncachedRegion)
       
     sbus.coupleTo("dtu_uncached") {
-      mbus.dtu_uncached_region.get.cpuNode := TLFragmenter(sbus.beatBytes, sbus.blockBytes, holdFirstDeny = true) := TLBuffer(1) := _
+      mbus.dtu_uncached_region.get.cpuNode := TLFragmenter(sbus.beatBytes, sbus.blockBytes, holdFirstDeny=true) := TLBuffer(1) := _
     }
       // Connect uncached region to memory bus (MBUS)
 
-    mbus.coupleFrom("simple_uncached_region_mem") { _ := TLFragmenter(mbus.beatBytes, mbus.blockBytes, holdFirstDeny = true) := mbus.dtu_uncached_region.get.memNode }
+    mbus.coupleFrom("simple_uncached_region_mem") { _ := TLFragmenter(mbus.beatBytes, mbus.blockBytes, holdFirstDeny=true) := mbus.dtu_uncached_region.get.memNode }
           
           
       mbus.rme.get

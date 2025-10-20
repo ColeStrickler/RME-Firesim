@@ -59,7 +59,7 @@ case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
 
 
 
-class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, tlOutBundle: TLBundle, instance: Int)(
+class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, tlOutBundle: TLBundle, config: Int)(
     implicit p: Parameters) extends Module{
         val tlOutParams = tlOutEdge.bundle
         //val tlOutBeats = tlOutEdge.numBeats(tlOutBundle.a.bits)
@@ -91,7 +91,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
             val agu = new RequestorAGUPort()
 
-        }).suggestName(s"requestorio_$instance")
+        }).suggestName(s"requestorio_$config")
 
         val CacheLineSize = 64 // cache line size in bytes
 
@@ -216,7 +216,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         when ((outQueue.io.deq.valid && !io.FetchUnit.ready) || outQueue.io.count > 0.U)
         {
-            SynthesizePrintf("[REQUESTOR] valid request cannot be sent to fetch units\n")
+          //  SynthesizePrintf("[REQUESTOR] valid request cannot be sent to fetch units\n")
         }
 
         switch(stateReg)
@@ -240,8 +240,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 */
                 sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
                 io.agu.offsetAddrFromBase.valid := !sentAddrAGU
-                io.agu.offsetAddrFromBase.bits := newReqOffset
-                SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
+                io.agu.offsetAddrFromBase.bits := requestOffset
+              //  SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
 
 
 
@@ -295,10 +295,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 when (outQueue.io.enq.fire)
                 {
                     //assert(baseRequest.address >= (params.rmeaddress - params.rmeShift).U && baseRequest.address <= (params.rmeaddress - params.rmeShift + params.rmeAddressSize).U)
-                    SynthesizePrintf("outQueue.io.enq.fire %d/%d\n", nDescriptorsSent, nDescriptors)
+                   // SynthesizePrintf("outQueue.io.enq.fire %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
-                    SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x %d\n", nBeats, baseRequest.address, baseRequest.source)
-                    SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
+                    //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x %d\n", nBeats, baseRequest.address, baseRequest.source)
+                    //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
                     SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)
                 }

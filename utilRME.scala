@@ -305,47 +305,69 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
 
     // Register to hold the current request being forwarded
   val forwardReg = Reg(new TLBundleA(inTL.params))
-  forwardReg := Mux(inTL.a.fire, inTL.a.bits, forwardReg)
+  
+  val id_allocator = Module(new IDAllocator(0, 7))
+  val id = Reg(UInt(3.W))
+  id_allocator.io.newID.ready := inTL.a.fire
 
+  when (id_allocator.io.newID.fire)
+  {
+    id := id_allocator.io.newID.bits
+  }
   
 
-    val canSend = RegInit(false.B)
-    canSend := Mux(canSend, !outTL.a.fire, inTL.a.fire)
-    inTL.a.ready := !canSend
+  id_allocator.io.retireID.valid := outTL.d.fire
+  id_allocator.io.retireID.bits := id
 
-    outTL.a.bits := forwardReg                   
-    outTL.a.bits.address := forwardReg.address -  0x20000000.U
+  forwardReg := Mux(inTL.a.fire, inTL.a.bits, forwardReg)
+
+  val (first, last, done, count, counter) = inEdge.firstlast2(inTL.a)
+
+    val canSend = RegInit(false.B)
+    val readyNewReq = RegInit(true.B)
+    canSend := Mux(canSend, !outTL.a.fire, inTL.a.fire)
+    readyNewReq := Mux(readyNewReq, !inTL.a.fire, inTL.d.fire)
+    inTL.a.ready := readyNewReq
+
+    outTL.a.bits := forwardReg          
+    outTL.a.bits.source := id         
+    outTL.a.bits.address := forwardReg.address -  0x10000000.U
     outTL.a.valid := canSend
 
     when(canSend)
     {
-      SynthesizePrintf("CANSEND\n")
+      //SynthesizePrintf("CANSEND\n")
     }
 
-
+      when (inTL.a.valid )
+      {
+        //SynthesizePrintf("(%d, %d, %d, %d, %d)\n", first, last, done, count, counter)
+        //assert(false.B, "!canSend && inTL.a.valid")
+      }
 
     when (outTL.d.valid)
     {
-      SynthesizePrintf("Received back the request\n")
+     // SynthesizePrintf("Received back the request\n")
     }
 
-    when (outTL.d.fire)
-    {
-      SynthesizePrintf("Sending back the request 0x%x size 0x%x source: %d\n", outTL.d.bits.data, outTL.d.bits.size, outTL.d.bits.source)
-    }
+    
     // Optional: forward D channel back
-    inTL.d <> outTL.d
+    inTL.d <> outTL.d 
+    inTL.d.bits.source := forwardReg.source
+
+
+  when (outTL.d.fire)
+    {
+      SynthesizePrintf("Sending back the request 0x%x opcode 0x%x source: %d\n", outTL.d.bits.data, outTL.d.bits.opcode, forwardReg.source)
+    }
+
 
     // Debug prints
     when(inTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] got request id: %d\n", inTL.a.bits.source) }
-    when(outTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] forwarded request 0x%x\n", forwardReg.size) }
-    when (outTL.a.ready)
+   // when(outTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] forwarded request 0x%x\n", forwardReg.size) }
+    when (outTL.a.fire)
     {
-      SynthesizePrintf("outTL.a.ready 0x%x %d\n", forwardReg.address, canSend)
-    }
-    when (cpuNode.in(0)._1.a.valid)
-    {
-      SynthesizePrintf("[UncachedRegion] in.a.valid 0x%x\n", cpuNode.in(0)._1.a.bits.address)
+      SynthesizePrintf("outTL.a.fire 0x%x %d\n", outTL.a.bits.source, outTL.a.bits.opcode)
     }
   }
 }
@@ -390,6 +412,9 @@ class DTUCachedRegionManager(implicit p: Parameters) extends LazyModule {
     currentRequest.valid := currentlyBeating
     val (d_first, d_last, d_done, beatCount, count) = edge.firstlast2(currentRequest)
     currentlyBeating := Mux(currentlyBeating, !d_done, tl.a.fire)
+
+  
+
 
     tl.d <> currentRequest
     tl.a.ready := !currentlyBeating

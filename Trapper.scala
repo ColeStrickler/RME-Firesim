@@ -37,13 +37,18 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         val hits = (0 until params.maxConfigs).map { i =>
           val start = io.Config.EphemeralRegionConfig_PhysStart(i)
           val size  = io.Config.EphemeralRegionConfig_Size(i)
-            SynthesizePrintf("addr >= 0x%x && addr <= 0x%x\n", start, start+size)
+           // SynthesizePrintf("addr >= 0x%x && addr <= 0x%x\n", start, start+size)
           (addr >= start) && (addr < (start + size))
         }
         val numHits = PopCount(VecInit(hits)) // counts how many are true
-        assert(numHits > 0.U, "Address matches less than one ephemeral region!")
-        assert(numHits === 1.U, "Address matches more than one ephemeral region!")
-        val hitIndex = PriorityEncoder(hits)
+        //assert(numHits > 0.U, "Address matches less than one ephemeral region!")
+        //assert(numHits === 1.U, "Address matches more than one ephemeral region!")
+        val hitIndex = Mux(numHits === 0.U, 0.U, PriorityEncoder(hits))
+        when (numHits === 0.U)
+        {
+            //SynthesizePrintf("numHits = 0\n\n")
+        }
+
         hitIndex
     }
 

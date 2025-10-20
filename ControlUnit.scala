@@ -90,9 +90,9 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
         when (currentlyPacking)
         {
-            SynthesizePrintf("packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
-            SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
-            SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
+           // SynthesizePrintf("packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
+           // SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
+           // SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
         }
 
 
