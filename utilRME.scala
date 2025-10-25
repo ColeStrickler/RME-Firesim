@@ -39,7 +39,7 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
 
   val initDone = RegInit(false.B)
   val IDValues = VecInit((minID to maxID).map(i => i.U))
-  println(f"IDAllocator allocating ${minID} to ${maxID}")
+  println(f"IDAllocator allocating { ${minID} to ${maxID} }\n")
 
 
   val initCounter = RegInit(0.U(log2Ceil(queue_depth).W))
@@ -358,16 +358,16 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
 
   when (outTL.d.fire)
     {
-      SynthesizePrintf("Sending back the request 0x%x opcode 0x%x source: %d\n", outTL.d.bits.data, outTL.d.bits.opcode, forwardReg.source)
+      //SynthesizePrintf("Sending back the request 0x%x opcode 0x%x source: %d\n", outTL.d.bits.data, outTL.d.bits.opcode, forwardReg.source)
     }
 
 
     // Debug prints
-    when(inTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] got request id: %d\n", inTL.a.bits.source) }
+    //when(inTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] got request id: %d\n", inTL.a.bits.source) }
    // when(outTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] forwarded request 0x%x\n", forwardReg.size) }
     when (outTL.a.fire)
     {
-      SynthesizePrintf("outTL.a.fire 0x%x %d\n", outTL.a.bits.source, outTL.a.bits.opcode)
+      //SynthesizePrintf("outTL.a.fire 0x%x %d\n", outTL.a.bits.source, outTL.a.bits.opcode)
     }
   }
 }

@@ -25,6 +25,7 @@ case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
     val discardFront = UInt(7.W)
     val discardBack = UInt(7.W)
     val beatCount = UInt(4.W)
+    val config = UInt(4.W)
 }
 
 
@@ -96,7 +97,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val CacheLineSize = 64 // cache line size in bytes
 
         // this isn't entirely flexible, assumes 1 bit source expansion
-        val id_allocator = Module(new IDAllocator(math.pow(2, tlOutParams.sourceBits-1).toInt, outMaxID))
+
+        val base_allowed_id = math.pow(2, tlOutParams.sourceBits-1).toInt
+        val total_ids = outMaxID - base_allowed_id
+        val start_id = base_allowed_id + (total_ids/params.maxConfigs)*config
+        val num_config_alloc_id = (total_ids/params.maxConfigs) -1
+        val id_allocator = Module(new IDAllocator(start_id, start_id + num_config_alloc_id))
         
     
 
@@ -278,6 +284,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 descriptorOut.discardFront := discardFront
                 descriptorOut.discardBack := discardBack
                 descriptorOut.beatCount := nBeats
+                descriptorOut.config := config.U
                 assert(nBeats > 0.U && nBeats <= 5.U)
 
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
@@ -289,7 +296,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                    SynthesizePrintf("AGU.fire 0x%x src=%d\n", io.agu.offset.bits, sendRequest.bits.source)
+                    SynthesizePrintf("AGU.fire 0x%x src=%d config %d, id=%d\n", io.agu.offset.bits, sendRequest.bits.source, config.U, descriptorOut.allocID)
                 }
 
                 when (outQueue.io.enq.fire)

@@ -37,7 +37,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         val hits = (0 until params.maxConfigs).map { i =>
           val start = io.Config.EphemeralRegionConfig_PhysStart(i)
           val size  = io.Config.EphemeralRegionConfig_Size(i)
-           // SynthesizePrintf("addr >= 0x%x && addr <= 0x%x\n", start, start+size)
+            //SynthesizePrintf("config check %d addr >= 0x%x && addr <= 0x%x\n", i.U, start, start+size)
           (addr >= start) && (addr < (start + size))
         }
         val numHits = PopCount(VecInit(hits)) // counts how many are true
@@ -48,6 +48,8 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         {
             //SynthesizePrintf("numHits = 0\n\n")
         }
+
+
 
         hitIndex
     }
@@ -74,10 +76,11 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     */
        val matchedConfig = Wire(UInt(log2Ceil(params.maxConfigs).W))
         matchedConfig := 0.U
+        matchedConfig := CheckConfigHit(io.TLInA.bits.address)
         when (io.TLInA.fire)
         {
-            SynthesizePrintf("io.TLInA.address 0x%x --> %d size: %d\n", io.TLInA.bits.address, io.TLInA.bits.source, io.TLInA.bits.size)
-             matchedConfig := CheckConfigHit(io.TLInA.bits.address)
+            
+            SynthesizePrintf("io.TLInA.address 0x%x --> %d size: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, io.TLInA.bits.size, matchedConfig)         
         }
         
 

@@ -40,17 +40,17 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
         // Fetch Unit Port
-        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID)))
-        val ID = Output(UInt(tlParams.sourceBits.W))
-        val useID = Output(Bool())
+        val FetchUnitPort = Vec(params.maxConfigs, Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID))))
+        val ID = Vec(params.maxConfigs, Output(UInt(tlParams.sourceBits.W)))
+        val useID = Vec(params.maxConfigs, Output(Bool()))
 
         // Trapper Port
-        val TrapperPort = DecoupledIO(ControlUnitTrapperPort(tlParams))
+        val TrapperPort = Vec(params.maxConfigs, DecoupledIO(ControlUnitTrapperPort(tlParams)))
 
 
 
         // Requestor Port
-        val RequestorPort = Decoupled(ControlUnitRequestorPort(outMaxID))
+        val RequestorPort = Vec(params.maxConfigs, Decoupled(ControlUnitRequestorPort(outMaxID)))
 
     }).suggestName(s"ctrlrio_$instance")
     
@@ -73,79 +73,90 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
         //SynthesizePrintf("[CONTROL UNIT] ==> io.TrapperPort.ready %d, io.TrapperPort.valid %d\n", io.TrapperPort.ready, io.TrapperPort.valid)
         
         
-        //when (io.FetchUnitPort.fire)
-        //{
-        //    SynthesizePrintf("[CONTROL UNIT FETCH UNIT FIRE] io.FetchUnitPort.baseReq.address 0x%x, data: 0x%x\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.data)
-        //}
-        val currentlyPacking = RegInit(false.B)
-        val BaseReq = Reg(new TLBundleA(tlParams))
-        val ColExtractor = Module(new ColumnExtractor(inMaxID, outMaxID))
-        val packer = Module(new PackerRME(inMaxID, outMaxID))
-        val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
 
 
 
-        io.ID := BaseReq.source
-        io.useID := currentlyPacking
 
-        when (currentlyPacking)
+        for (i <- 0 until params.maxConfigs)
         {
-           // SynthesizePrintf("packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
-           // SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
-           // SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
+
+            val currentlyPacking = RegInit(false.B)
+            val BaseReq = Reg(new TLBundleA(tlParams))
+            val ColExtractor = Module(new ColumnExtractor(inMaxID, outMaxID))
+            val packer = Module(new PackerRME(inMaxID, outMaxID))
+            val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
+            when (io.FetchUnitPort(i).fire)
+            {
+                SynthesizePrintf("[ControlUnit_%d] io.FetchUnitPort.baseReq.address 0x%x\n", i.U, io.FetchUnitPort(i).bits.baseReq.address)
+            }
+
+
+            io.ID(i) := BaseReq.source
+            io.useID(i) := currentlyPacking
+
+            when (currentlyPacking)
+            {
+             SynthesizePrintf("[ControlUnit_%d] packed %d/64 for addr: 0x%x\n", i.U, packer.io.nPacked, BaseReq.address)
+            // SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
+            // SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
+            }
+
+
+            descriptor := Mux(io.FetchUnitPort(i).fire, io.FetchUnitPort(i).bits.descriptor, descriptor)
+
+            ColExtractor.io.CacheLineIn.bits    := io.FetchUnitPort(i).bits.data
+            ColExtractor.io.CacheLineIn.valid   := io.FetchUnitPort(i).fire
+            ColExtractor.io.DescriptorIn        := io.FetchUnitPort(i).bits.descriptor
+
+
+            // we modified this, and think this should work.if currently packing a line, we need to wait to pack the whole thing
+            // we can add more packers eventually and arbitrate over the trapper port
+            currentlyPacking := Mux(currentlyPacking, !io.TrapperPort(i).fire, io.FetchUnitPort(i).fire)
+            /*
+                Potential bottle neck?
+            */
+
+
+
+            io.FetchUnitPort(i).ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort(i).bits.descriptor.baseID === BaseReq.source)
+            
+
+            // this should fire after we get an entire cache line
+            BaseReq := Mux(io.FetchUnitPort(i).fire, io.FetchUnitPort(i).bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
+            packer.io.ColExtractor <> ColExtractor.io.Packer
+
+            io.TrapperPort(i).bits.baseReq := BaseReq
+            //io.TrapperPort.bits.baseReq.source := descriptor.baseID
+            
+            io.TrapperPort(i).bits.cacheLine := packer.io.PackedLine.bits
+            io.TrapperPort(i).valid := packer.io.PackedLine.valid
+            packer.io.PackedLine.ready := io.TrapperPort(i).ready
+            /*
+                Column extractor takes data out of the incoming lines and sends it to packer
+            */
+
+
+
+            /*
+                When packer has fully backed the line, we store to SPM and send it to trapper
+                so it can be sent back to memory
+
+
+                By storing packed data, we have all or nothing access, save space, and can more easily check whether or not
+                the line has been assembled
+            */
+
+
+            /*
+                We can now retire the ID that was allocated for this request
+            */
+            io.RequestorPort(i).bits.retireID := io.FetchUnitPort(i).bits.descriptor.allocID
+            io.RequestorPort(i).valid := io.FetchUnitPort(i).fire
+            val ready = WireInit(false.B)
+            ready := io.RequestorPort(i).ready 
         }
 
 
-        descriptor := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.descriptor, descriptor)
 
-        ColExtractor.io.CacheLineIn.bits := io.FetchUnitPort.bits.data
-        ColExtractor.io.CacheLineIn.valid := io.FetchUnitPort.fire
-        ColExtractor.io.DescriptorIn := io.FetchUnitPort.bits.descriptor
-
-
-        // we modified this, and think this should work.if currently packing a line, we need to wait to pack the whole thing
-        // we can add more packers eventually and arbitrate over the trapper port
-        currentlyPacking := Mux(currentlyPacking, !io.TrapperPort.fire, io.FetchUnitPort.fire)
-        /*
-            Potential bottle neck?
-        */
-
-
-
-        io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
-        
-
-        // this should fire after we get an entire cache line
-        BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
-        packer.io.ColExtractor <> ColExtractor.io.Packer
-        io.TrapperPort.bits.baseReq := BaseReq
-        //io.TrapperPort.bits.baseReq.source := descriptor.baseID
-         
-        io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
-        io.TrapperPort.valid := packer.io.PackedLine.valid
-        packer.io.PackedLine.ready := io.TrapperPort.ready
-        /*
-            Column extractor takes data out of the incoming lines and sends it to packer
-        */
-
-
-
-        /*
-            When packer has fully backed the line, we store to SPM and send it to trapper
-            so it can be sent back to memory
-
-
-            By storing packed data, we have all or nothing access, save space, and can more easily check whether or not
-            the line has been assembled
-        */
-
-
-        /*
-            We can now retire the ID that was allocated for this request
-        */
-        io.RequestorPort.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
-        io.RequestorPort.valid := io.FetchUnitPort.fire
-        val ready = WireInit(false.B)
-        ready := io.RequestorPort.ready 
 
 }

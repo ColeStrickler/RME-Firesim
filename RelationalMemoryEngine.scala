@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = true,
-    maxConfigs : Int = 1,
+    maxConfigs : Int = 2,
 )
 
 
@@ -61,10 +61,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     
     
   val node = TLAdapterNode()
-  val agu = LazyModule(new AGUTop(new AGUParams))
-  val aguctlnode = agu.ctlnode
-    
-  
+
+  val agu_vec = Seq.tabulate(params.maxConfigs) { i =>
+    LazyModule(new AGUTop(new AGUParams, i))
+  }
+
+
   
 
   val device2 = new SimpleDevice("dtu_region", Seq("dturegion")) with HasReservedAddressRange {
@@ -119,7 +121,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val nClients = node.in.length
     println(s"Number of edges into RME: $nClients\n")
     //require(nClients == 1)
-    val aguModule = agu.module  // hardware instance of AGUTop
+   // val aguModule = agu.module  // hardware instance of AGUTop
 
 
 
@@ -307,12 +309,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
       //val ConfigPort = new ConfigurationPortRME(params, device, i)
       val trapper = Module(new TrapperRME(params, cachedRegionEdge, out_edge, in, i))
-      val requestor = Module(new RequestorRME(params, cachedRegionEdge, out_edge, out, 0))
-
+      val requestors = VecInit(Seq.tabulate(params.maxConfigs){i => 
+        val req = Module(new RequestorRME(params, cachedRegionEdge, out_edge, out, i))
+        req.io
+        })
+      requestors.zipWithIndex.foreach{ case (req, i) =>
+          req.agu <> agu_vec(i).module.io.reqIO
+      }
       
 
-      requestor.io.agu <> aguModule.io.reqIO
-      
+
 
 
 
@@ -344,7 +350,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val dtu_cached_in_a = Wire(Decoupled(new TLBundleA(cachedParams)))
       when (cachedRegionIn.a.valid)
       {
-        SynthesizePrintf("cachedRegionIn.a.valid\n")
+       // SynthesizePrintf("cachedRegionIn.a.valid\n")
       }
       dtu_cached_in_a.bits := cachedRegionIn.a.bits
       dtu_cached_in_a.valid := cachedRegionIn.a.valid
@@ -447,29 +453,49 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
         We can just use trapper.io.Requestor.trapperReq.bits.configMatch to route to the correct one
       */
+
+      val config_hit = trapper.io.Requestor.trapperReq.bits.configMatch
       
+      trapper.io.Requestor.trapperReq.ready := false.B
+      requestors.zipWithIndex.foreach { case  (req, i) => 
+        req.Trapper.trapperReq.valid := false.B // default
+        req.Trapper.trapperReq.bits := Mux(config_hit === i.U, trapper.io.Requestor.trapperReq.bits, 0.U.asTypeOf(trapper.io.Requestor.trapperReq.bits))
 
-      requestor.io.Trapper.trapperReq <> trapper.io.Requestor.trapperReq
-
-
-      trapper.io.ControlUnit <> control_unit.io.TrapperPort
-      if (params.withPerfCounter)
-      {
-        val ctrlToTrapperStall = control_unit.io.TrapperPort.valid && !control_unit.io.TrapperPort.fire
-        when (ctrlToTrapperStall)
+        when (config_hit === i.U)
         {
-          //SynthesizePrintf("ctrlToTrapperStall\n")
-          r_CtrlToTrapperStall.foreach{ reg =>
-            reg := reg + 1.U
-          }
+          trapper.io.Requestor.trapperReq.ready := req.Trapper.trapperReq.ready
+          req.Trapper.trapperReq.valid := trapper.io.Requestor.trapperReq.valid
         }
 
+      }
+
+      val trapperCtrlArb = Module(new RRArbiter(control_unit.io.TrapperPort(0).bits.cloneType, params.maxConfigs))
+      trapperCtrlArb.io.in <> control_unit.io.TrapperPort
+      trapper.io.ControlUnit <> trapperCtrlArb.io.out
+
+
+
+
+
+
+
+      if (params.withPerfCounter)
+      {
+       // val ctrlToTrapperStall = control_unit.io.TrapperPort.valid && !control_unit.io.TrapperPort.fire
+       // when (ctrlToTrapperStall)
+       // {
+       //   //SynthesizePrintf("ctrlToTrapperStall\n")
+       //   r_CtrlToTrapperStall.foreach{ reg =>
+       //     reg := reg + 1.U
+       //   }
+       // }
+//
         
       }
 
-
-
-      requestor.io.Config := config
+      requestors.foreach { req =>
+        req.Config := config
+      }
 
       /*
         FetchUnit(s)/Requestor connection
@@ -478,23 +504,30 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val ohFetchUnitsReady = PriorityEncoderOH(fetchReadyVec)
       val fetchUnitReady = fetchReadyVec.reduce(_||_) 
       
-      requestor.io.FetchUnit.ready := fetchUnitReady // this should fire to the right one
+      // this should fire to the right one
+      val requestorArb = Module(new RRArbiter(requestors.head.FetchUnit.bits.cloneType, params.maxConfigs))
+      requestorArb.io.in <> requestors.map(_.FetchUnit)
+
+      val selectedRequestor = requestorArb.io.out
+      selectedRequestor.ready := fetchUnitReady 
+      
+      // CAN DEBUG WITH requestorArb.io.chosen
       for (n <- 0 until fetch_units.length)
       {
           val fetch_unit = fetch_units(n)
-          fetch_unit.Requestor.valid := ohFetchUnitsReady(n) && requestor.io.FetchUnit.valid
-          fetch_unit.Requestor.bits := requestor.io.FetchUnit.bits
+          fetch_unit.Requestor.valid := ohFetchUnitsReady(n) && selectedRequestor.valid
+          fetch_unit.Requestor.bits := selectedRequestor.bits
       }
 
       if (params.withPerfCounter) {
-        val fetchUnitsFullStall = requestor.io.FetchUnit.valid  && !fetchUnitReady
-        when (fetchUnitsFullStall)
-        {
-          //SynthesizePrintf("fetchUnitsFullStall %d\n", r_FetchFullStall.get)
-          r_FetchFullStall.foreach{ reg =>
-            reg := reg + 1.U
-          }
-        }
+        //val fetchUnitsFullStall = requestor.io.FetchUnit.valid  && !fetchUnitReady
+        //when (fetchUnitsFullStall)
+        //{
+        //  //SynthesizePrintf("fetchUnitsFullStall %d\n", r_FetchFullStall.get)
+        //  r_FetchFullStall.foreach{ reg =>
+        //    reg := reg + 1.U
+        //  }
+        //}
         
         //SynthesizePrintf("fetchUnits %d & valid %d\n", fetchReadyVec.asUInt, requestor.io.FetchUnit.valid)
         
@@ -504,29 +537,61 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
+      val fetch_unit_config = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit.bits.descriptor.config))
+
+      for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
+              fu.ready := false.B
+        }
       
-         
-      when (control_unit.io.useID)
+      for (i <- 0 until params.maxConfigs)
       {
-          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID && fu.valid)
-          val selectedIdx = PriorityEncoder(valids.asUInt)
+          when (control_unit.io.useID(i))
+        {
+          SynthesizePrintf("%d Use ID\n", i.U)
+            val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID(i) && fu.valid && fu.bits.descriptor.config === i.U)
+            val selectedIdx = PriorityEncoder(valids.asUInt)
 
 
+            control_unit.io.FetchUnitPort(i).valid := fetch_unit_ctrl_io(selectedIdx).valid
+            control_unit.io.FetchUnitPort(i).bits  := fetch_unit_ctrl_io(selectedIdx).bits
 
-
-          control_unit.io.FetchUnitPort.valid := fetch_unit_ctrl_io(selectedIdx).valid
-          control_unit.io.FetchUnitPort.bits  := fetch_unit_ctrl_io(selectedIdx).bits
-          for ((fu, i) <- fetch_unit_ctrl_io.zipWithIndex) {
-            fu.ready := (i.U === selectedIdx) && control_unit.io.FetchUnitPort.ready
+            for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
+                when(x.U === selectedIdx)
+                {
+                  fu.ready := control_unit.io.FetchUnitPort(i).ready
+                }
           }
-          //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
+            //fetch_unit_ctrl_io(selectedIdx).ready 
+            //for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
+            //  fu.ready := (x.U === selectedIdx) && control_unit.io.FetchUnitPort(i).ready
+            //}
+            //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
+        }
+        .otherwise
+        {
+            val fetch_unit_ctrl_in = Wire(chiselTypeOf(fetch_unit_ctrl_io))
+            fetch_unit_ctrl_in.zipWithIndex.foreach { case (in, idx) =>
+              in.bits := fetch_unit_ctrl_io(idx).bits
+              in.valid := fetch_unit_ctrl_io(idx).valid  && (fetch_unit_ctrl_io(idx).bits.descriptor.config === i.U)
+              when (fetch_unit_ctrl_io(idx).bits.descriptor.config === i.U)
+              {
+                fetch_unit_ctrl_io(idx).ready := in.ready
+              }
+            }
+
+            
+
+            val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID), params.nFetchUnits))
+            ctrl_unit_arb.io.in <> fetch_unit_ctrl_in
+            control_unit.io.FetchUnitPort(i) <> ctrl_unit_arb.io.out
+        }
+
+
       }
-      .otherwise
-      {
-          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID), params.nFetchUnits))
-          ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
-          control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
-      }
+
+
+
+      
 
 
 
@@ -536,16 +601,16 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
       if (params.withPerfCounter)
       {
-        val fetchToCtrlStall = fetch_units.map(fetch_unit => fetch_unit.ControlUnit.valid).reduce(_||_) && !control_unit.io.FetchUnitPort.fire
-
-
-        when (fetchToCtrlStall)
-        {
-          //SynthesizePrintf("fetchToCtrlStall\n")
-          r_FetchToCtrlStall.foreach{ reg =>
-            reg :=  reg + 1.U
-          }
-        }
+        // /val fetchToCtrlStall = fetch_units.map(fetch_unit => fetch_unit.ControlUnit.valid).reduce(_||_) && !control_unit.io.FetchUnitPort.fire
+// /
+// /
+        // /when (fetchToCtrlStall)
+        // /{
+        // /  //SynthesizePrintf("fetchToCtrlStall\n")
+        // /  r_FetchToCtrlStall.foreach{ reg =>
+        // /    reg :=  reg + 1.U
+        // /  }
+        // /}
       }
 
 
@@ -554,8 +619,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //  printf(p"FetchUnit $i: valid=${ctrl.valid}, ready=${ctrl.ready}\n")
       //}
       //printf(p"Arbiter Out: valid=${ctrl_unit_arb.io.out.valid}, ready=${ctrl_unit_arb.io.out.ready}\n")
-      requestor.io.ControlUnit <> control_unit.io.RequestorPort
 
+
+
+      requestors.zipWithIndex.foreach { case (req, i) =>
+          req.ControlUnit <> control_unit.io.RequestorPort(i)
+      }
+    
 
 
 
@@ -625,10 +695,14 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
         mbus.rme.get.ctlnode := 
         TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
 
-      pbus.coupleTo(portName) {
-        mbus.rme.get.agu.ctlnode := 
-        TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
+      mbus.rme.get.agu_vec.foreach{ agu => 
+        pbus.coupleTo(portName) {
+          agu.ctlnode := 
+          TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ 
+        }
 
+      }
+      
       mbus.coupleTo("dtu_cached_region") {
         mbus.rme.get.dtu_cached_region := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
       }
