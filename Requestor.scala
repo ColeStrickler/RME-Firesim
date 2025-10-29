@@ -14,6 +14,7 @@ import scala.annotation.meta.param
 import os.stat
 import agu.AGUTop
 import agu.AGUParams
+import agu.ShiftDivider
 
 
 
@@ -159,7 +160,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val sentAddrAGU = RegInit(false.B)
         
         val col = RegInit(0.U(log2Ceil(512 + 1).W))
-        val sumOffset = RegInit(0.U(log2Ceil(512 + 1).W))
         val busWidth = 8.U(7.W)
 
         /* 
@@ -258,9 +258,12 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 //agu.module.io.doGen.fire
                 //agu.module.io.offset.fire
                         
-                val last = col === io.Config.EnabledColumnCount - 1.U
-                val done = last && outQueue.io.enq.fire
+      
                 //SynthesizePrintf("[REQUESTOR] baseRequest.address 0x%x\n", baseRequest.address)
+
+
+                // Adjust discards based on whether front or back half is being packed
+
                 val P_i_j = io.agu.offset.bits
                 val R_i_j = (P_i_j / 8.U(32.W)) * busWidth
                 val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
@@ -268,6 +271,21 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val discardFront = P_i_j % busWidth
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
                 val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
+                
+                /*
+                    Detection logic for when we have data items that can overlap a cache line
+                */
+                val isFirst = nDescriptorsSent === 0.U
+                val isLast = nDescriptorsSent === nDescriptors - 1.U
+                val startAddr = backingEphemeralRegionStart + io.agu.offset.bits
+                val endAddr = startAddr + io.Config.ColumnWidths
+                val cacheLineEnd = (startAddr & ~(0x3F.U)) + 0x40.U
+                val overlapsCacheLine = (isFirst || isLast) && (endAddr >= cacheLineEnd)
+                val isFrontHalf = isFirst
+                //val discardFrontEffective = Mux(isFrontHalf, discardFront, 0.U)
+                //val discardBackEffective  = Mux(isFrontHalf, 0.U, discardBack)
+
+
 
                 val sendRequest = Wire(Valid(new TLBundleA(tlOutParams)))
                 sendRequest.bits := baseRequest
@@ -313,7 +331,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 //nSentForProcessing := nSentForProcessing + io.agu.doGen.fire
                 nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
-                sumOffset := Mux(outQueue.io.enq.fire, Mux(last, 0.U, sumOffset + io.Config.ColumnOffsets(col)), sumOffset)
 
                 stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && outQueue.io.enq.fire, idle, stateReg)
             }

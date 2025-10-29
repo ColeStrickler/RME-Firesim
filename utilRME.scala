@@ -398,7 +398,7 @@ class DTUCachedRegionManager(implicit p: Parameters) extends LazyModule {
     val (tl, edge) = node.in(0)
     when (tl.a.fire)
     {
-      SynthesizePrintf("DTUCACHEDREGIONMANAGER FIRE\n");
+    //  SynthesizePrintf("DTUCACHEDREGIONMANAGER FIRE\n");
     }
     
     val tlInParams = tl.params
@@ -420,7 +420,7 @@ class DTUCachedRegionManager(implicit p: Parameters) extends LazyModule {
     tl.a.ready := !currentlyBeating
     when (tl.d.fire)
     {
-      SynthesizePrintf("[DTUCachedRegionManager] ==> sent reply to 0x%x with data: 0x%x\n", inAReq.address, currentRequest.bits.data)
+     // SynthesizePrintf("[DTUCachedRegionManager] ==> sent reply to 0x%x with data: 0x%x\n", inAReq.address, currentRequest.bits.data)
     }
     //assert(!tl.a.valid)
   }
