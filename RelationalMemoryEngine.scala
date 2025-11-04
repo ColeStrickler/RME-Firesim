@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = true,
-    maxConfigs : Int = 2,
+    maxConfigs : Int = 4,
 )
 
 
@@ -543,6 +543,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
               fu.ready := false.B
         }
       
+
+      /*
+          We want to just pass all of these values in to the ctrl unit, and then let the ctrl unit decide what to do
+          We currently are creating massive congestion here that is not needed
+        
+      */
       for (i <- 0 until params.maxConfigs)
       {
           when (control_unit.io.useID(i))
