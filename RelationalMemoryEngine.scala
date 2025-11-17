@@ -469,10 +469,12 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       }
 
-      val trapperCtrlArb = Module(new RRArbiter(control_unit.io.TrapperPort(0).bits.cloneType, params.maxConfigs))
-      trapperCtrlArb.io.in <> control_unit.io.TrapperPort
-      trapper.io.ControlUnit <> trapperCtrlArb.io.out
 
+
+      /*
+        [TRAPPER := CONTROL UNIT]
+      */
+        trapper.io.ControlUnit <> control_unit.io.TrapperPort
 
 
 
@@ -500,13 +502,56 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       /*
         FetchUnit(s)/Requestor connection
       */
+
+      /* 
+        Requestor -> Fetch Unit
+
+        [[Ticket prioritization logic]]
+      */
+      val reqTicketVec = Wire(Vec(requestors.length, new ReqTicketInfo(requestors.length, 16)))
+      val reqTickets = requestors.zipWithIndex.map{case (req, i) =>
+        (req.FetchUnit.bits.descriptor.ticket, i.U, req.FetchUnit.valid)  
+      }
+      reqTicketVec.zipWithIndex.foreach {case (reqT, i) =>
+        reqT.ticket := reqTickets(i)._1
+        reqT.index :=  reqTickets(i)._2
+        reqT.valid := reqTickets(i)._3
+      }
+
+      def ticketCompare(a: UInt, b: UInt): Bool = {
+        val msbA = a(a.getWidth-1)
+        val msbB = b(b.getWidth-1)
+
+        Mux(msbA === msbB, a < b, msbA > msbB)
+      }
+
+
+      val minReqTicket = reqTicketVec.reduceTree{ (a, b) => 
+        val aBetter =
+          a.valid && (
+            !b.valid || ticketCompare(a.ticket, b.ticket)
+          )
+        Mux(aBetter, a, b)
+      }
+      val reqFetchIO = requestors.map(_.FetchUnit)
+
+
+
       val fetchReadyVec = fetch_units.map(fetch_unit => fetch_unit.Requestor.ready)
       val ohFetchUnitsReady = PriorityEncoderOH(fetchReadyVec)
       val fetchUnitReady = fetchReadyVec.reduce(_||_) 
       
       // this should fire to the right one
       val requestorArb = Module(new RRArbiter(requestors.head.FetchUnit.bits.cloneType, params.maxConfigs))
-      requestorArb.io.in <> requestors.map(_.FetchUnit)
+      requestorArb.io.in <> reqFetchIO
+      reqFetchIO.zipWithIndex.foreach {case (req, i) => 
+        req.ready := requestorArb.io.in(i).ready && (minReqTicket.index === i.U)
+        requestorArb.io.in(i).valid := req.valid && (minReqTicket.index === i.U)
+        when (req.valid)
+        {
+         // SynthesizePrintf("req(%d).valid minReqTicketIndex %d, valid %d\n", i.U, minReqTicket.index, minReqTicket.valid)
+        }
+      }
 
       val selectedRequestor = requestorArb.io.out
       selectedRequestor.ready := fetchUnitReady 
@@ -519,80 +564,25 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
           fetch_unit.Requestor.bits := selectedRequestor.bits
       }
 
-      if (params.withPerfCounter) {
-        //val fetchUnitsFullStall = requestor.io.FetchUnit.valid  && !fetchUnitReady
-        //when (fetchUnitsFullStall)
-        //{
-        //  //SynthesizePrintf("fetchUnitsFullStall %d\n", r_FetchFullStall.get)
-        //  r_FetchFullStall.foreach{ reg =>
-        //    reg := reg + 1.U
-        //  }
-        //}
-        
-        //SynthesizePrintf("fetchUnits %d & valid %d\n", fetchReadyVec.asUInt, requestor.io.FetchUnit.valid)
-        
-
-        
-      }
 
 
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
-      val fetch_unit_config = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit.bits.descriptor.config))
-
-      for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
-              fu.ready := false.B
-        }
-      
-
-      /*
-          We want to just pass all of these values in to the ctrl unit, and then let the ctrl unit decide what to do
-          We currently are creating massive congestion here that is not needed
-        
-      */
-      for (i <- 0 until params.maxConfigs)
+      when (control_unit.io.useID)
       {
-          when (control_unit.io.useID(i))
-        {
-          SynthesizePrintf("%d Use ID\n", i.U)
-            val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID(i) && fu.valid && fu.bits.descriptor.config === i.U)
-            val selectedIdx = PriorityEncoder(valids.asUInt)
-
-
-            control_unit.io.FetchUnitPort(i).valid := fetch_unit_ctrl_io(selectedIdx).valid
-            control_unit.io.FetchUnitPort(i).bits  := fetch_unit_ctrl_io(selectedIdx).bits
-
-            for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
-                when(x.U === selectedIdx)
-                {
-                  fu.ready := control_unit.io.FetchUnitPort(i).ready
-                }
+          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID && fu.valid)
+          val selectedIdx = PriorityEncoder(valids.asUInt)
+          control_unit.io.FetchUnitPort.valid := fetch_unit_ctrl_io(selectedIdx).valid
+          control_unit.io.FetchUnitPort.bits  := fetch_unit_ctrl_io(selectedIdx).bits
+          for ((fu, i) <- fetch_unit_ctrl_io.zipWithIndex) {
+            fu.ready := (i.U === selectedIdx) && control_unit.io.FetchUnitPort.ready
           }
-            //fetch_unit_ctrl_io(selectedIdx).ready 
-            //for ((fu, x) <- fetch_unit_ctrl_io.zipWithIndex) {
-            //  fu.ready := (x.U === selectedIdx) && control_unit.io.FetchUnitPort(i).ready
-            //}
-            //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
-        }
-        .otherwise
-        {
-            val fetch_unit_ctrl_in = Wire(chiselTypeOf(fetch_unit_ctrl_io))
-            fetch_unit_ctrl_in.zipWithIndex.foreach { case (in, idx) =>
-              in.bits := fetch_unit_ctrl_io(idx).bits
-              in.valid := fetch_unit_ctrl_io(idx).valid  && (fetch_unit_ctrl_io(idx).bits.descriptor.config === i.U)
-              when (fetch_unit_ctrl_io(idx).bits.descriptor.config === i.U)
-              {
-                fetch_unit_ctrl_io(idx).ready := in.ready
-              }
-            }
-
-            
-
-            val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID), params.nFetchUnits))
-            ctrl_unit_arb.io.in <> fetch_unit_ctrl_in
-            control_unit.io.FetchUnitPort(i) <> ctrl_unit_arb.io.out
-        }
-
-
+          //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
+      }
+      .otherwise
+      {
+          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, inMaxID, outMaxID), params.nFetchUnits))
+          ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
+          control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
       }
 
 

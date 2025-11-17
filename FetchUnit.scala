@@ -113,7 +113,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         val currentlyBeating = RegInit(false.B)
         val currentRequest = Reg(new TLBundleA(tlOutParams))
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
-        val currentBaseAddr = RegInit(0.U(64.W))
+        //val currentBaseAddr = RegInit(0.U(64.W))
         val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
         currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire)
         currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
@@ -133,7 +133,15 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         */
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
 
+        
+        /*
+            We do not need to store an entire cache line here
+
+            We can cut this down to 16-24 bytes
+        */
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
+
+
         val dataRegFull = RegInit(false.B)
         val receivedAllData = RegInit(true.B)
         val corrupt = RegInit(false.B)

@@ -27,6 +27,19 @@ case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle
 
 // we only need the cached manager edge
 
+
+
+/*
+    Let's parameterize the width of this as well.
+
+    We will have a single input into the control unit. We will output the active config #s along with the IDs
+
+    We maybe can feed back the active config numbers to the Requestors such that they only output valid if that config is active 
+
+
+    Let us actually reduce the size of the receiving fetch unit buffers. Lets place some asserts on them as well to reduce the size
+*/
+
 class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: TLEdgeIn, instance: Int) (
     implicit p: Parameters) extends Module {
 
@@ -40,12 +53,12 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
         // Fetch Unit Port
-        val FetchUnitPort = Vec(params.maxConfigs, Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID))))
-        val ID = Vec(params.maxConfigs, Output(UInt(tlParams.sourceBits.W)))
-        val useID = Vec(params.maxConfigs, Output(Bool()))
+        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID)))
+        val ID = Output(UInt(tlParams.sourceBits.W))
+        val useID = Output(Bool())
 
         // Trapper Port
-        val TrapperPort = Vec(params.maxConfigs, DecoupledIO(ControlUnitTrapperPort(tlParams)))
+        val TrapperPort = DecoupledIO(ControlUnitTrapperPort(tlParams))
 
 
 
@@ -77,60 +90,57 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
 
-        for (i <- 0 until params.maxConfigs)
-        {
-
             val currentlyPacking = RegInit(false.B)
             val BaseReq = Reg(new TLBundleA(tlParams))
             val ColExtractor = Module(new ColumnExtractor(inMaxID, outMaxID))
             val packer = Module(new PackerRME(inMaxID, outMaxID))
             val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
-            when (io.FetchUnitPort(i).fire)
+            when (io.FetchUnitPort.fire)
             {
-                SynthesizePrintf("[ControlUnit_%d] io.FetchUnitPort.baseReq.address 0x%x\n", i.U, io.FetchUnitPort(i).bits.baseReq.address)
+                SynthesizePrintf("[ControlUnit] io.FetchUnitPort.baseReq.address 0x%x\n", io.FetchUnitPort.bits.baseReq.address)
             }
 
 
-            io.ID(i) := BaseReq.source
-            io.useID(i) := currentlyPacking
+            io.ID := BaseReq.source
+            io.useID := currentlyPacking
 
             when (currentlyPacking)
             {
-             SynthesizePrintf("[ControlUnit_%d] packed %d/64 for addr: 0x%x\n", i.U, packer.io.nPacked, BaseReq.address)
+             SynthesizePrintf("[ControlUnit] packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
             // SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
             // SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
             }
 
 
-            descriptor := Mux(io.FetchUnitPort(i).fire, io.FetchUnitPort(i).bits.descriptor, descriptor)
+            descriptor := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.descriptor, descriptor)
 
-            ColExtractor.io.CacheLineIn.bits    := io.FetchUnitPort(i).bits.data
-            ColExtractor.io.CacheLineIn.valid   := io.FetchUnitPort(i).fire
-            ColExtractor.io.DescriptorIn        := io.FetchUnitPort(i).bits.descriptor
+            ColExtractor.io.CacheLineIn.bits    := io.FetchUnitPort.bits.data
+            ColExtractor.io.CacheLineIn.valid   := io.FetchUnitPort.fire
+            ColExtractor.io.DescriptorIn        := io.FetchUnitPort.bits.descriptor
 
 
             // we modified this, and think this should work.if currently packing a line, we need to wait to pack the whole thing
             // we can add more packers eventually and arbitrate over the trapper port
-            currentlyPacking := Mux(currentlyPacking, !io.TrapperPort(i).fire, io.FetchUnitPort(i).fire)
+            currentlyPacking := Mux(currentlyPacking, !io.TrapperPort.fire, io.FetchUnitPort.fire)
             /*
                 Potential bottle neck?
             */
 
 
 
-            io.FetchUnitPort(i).ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort(i).bits.descriptor.baseID === BaseReq.source)
+            io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
             
 
             // this should fire after we get an entire cache line
-            BaseReq := Mux(io.FetchUnitPort(i).fire, io.FetchUnitPort(i).bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
+            BaseReq := Mux(io.FetchUnitPort.fire, io.FetchUnitPort.bits.baseReq, BaseReq)  // --> need to make sure we can grab and use this correctly
             packer.io.ColExtractor <> ColExtractor.io.Packer
 
-            io.TrapperPort(i).bits.baseReq := BaseReq
+            io.TrapperPort.bits.baseReq := BaseReq
             //io.TrapperPort.bits.baseReq.source := descriptor.baseID
             
-            io.TrapperPort(i).bits.cacheLine := packer.io.PackedLine.bits
-            io.TrapperPort(i).valid := packer.io.PackedLine.valid
-            packer.io.PackedLine.ready := io.TrapperPort(i).ready
+            io.TrapperPort.bits.cacheLine := packer.io.PackedLine.bits
+            io.TrapperPort.valid := packer.io.PackedLine.valid
+            packer.io.PackedLine.ready := io.TrapperPort.ready
             /*
                 Column extractor takes data out of the incoming lines and sends it to packer
             */
@@ -150,11 +160,23 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             /*
                 We can now retire the ID that was allocated for this request
             */
-            io.RequestorPort(i).bits.retireID := io.FetchUnitPort(i).bits.descriptor.allocID
-            io.RequestorPort(i).valid := io.FetchUnitPort(i).fire
-            val ready = WireInit(false.B)
-            ready := io.RequestorPort(i).ready 
-        }
+
+
+            val config = io.FetchUnitPort.bits.descriptor.config
+            io.RequestorPort.zipWithIndex.foreach{ case (reqport, i) =>
+
+                when (config === i.U)
+                {
+                    reqport.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
+                    reqport.valid := io.FetchUnitPort.fire
+                } .otherwise
+                {
+                    reqport.bits := 0.U.asTypeOf(ControlUnitRequestorPort(outMaxID))    
+                    reqport.valid := false.B
+                }
+            }
+
+
 
 
 

@@ -63,17 +63,18 @@ class IDAllocator(minID : Int, maxID : Int) extends Module {
 */
 class TLSourceExpander(needed: Int)(implicit p: Parameters)  extends LazyModule {
   def findBitsNeeded(baseWidth: Int, need: Int, check: Int) : Int = { // helper function to find bits needed
-    assert(check <= 3) // this shouldnt happen
+    //assert(check <= 3) // this shouldnt happen
     if (math.pow(2,baseWidth + check) - math.pow(2, baseWidth) >= need)
       check
     else
       findBitsNeeded(baseWidth, need, check+1)
   }
   
+  
   val node = (new TLAdapterNode(
     clientFn  = { cp => 
       val baseWidth = log2Ceil(cp.endSourceId)
-      val new_width = math.pow(2, baseWidth+findBitsNeeded(baseWidth, needed, 1)).toInt
+      val new_width = math.pow(2, baseWidth+needed).toInt
       val client = TLMasterParameters.v1(
         name     = "TLSourceExpander",
         sourceId = IdRange(0, new_width)

@@ -33,21 +33,21 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     }
 
         def CheckConfigHit(addr: UInt) : UInt = {
-        //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
-        val hits = (0 until params.maxConfigs).map { i =>
-          val start = io.Config.EphemeralRegionConfig_PhysStart(i)
-          val size  = io.Config.EphemeralRegionConfig_Size(i)
-            //SynthesizePrintf("config check %d addr >= 0x%x && addr <= 0x%x\n", i.U, start, start+size)
-          (addr >= start) && (addr < (start + size))
-        }
-        val numHits = PopCount(VecInit(hits)) // counts how many are true
-        //assert(numHits > 0.U, "Address matches less than one ephemeral region!")
-        //assert(numHits === 1.U, "Address matches more than one ephemeral region!")
-        val hitIndex = Mux(numHits === 0.U, 0.U, PriorityEncoder(hits))
-        when (numHits === 0.U)
-        {
-            //SynthesizePrintf("numHits = 0\n\n")
-        }
+            //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
+            val hits = (0 until params.maxConfigs).map { i =>
+            val start = io.Config.EphemeralRegionConfig_PhysStart(i)
+            val size  = io.Config.EphemeralRegionConfig_Size(i)
+                //SynthesizePrintf("config check %d addr >= 0x%x && addr <= 0x%x\n", i.U, start, start+size)
+            (addr >= start) && (addr < (start + size))
+            }
+            val numHits = PopCount(VecInit(hits)) // counts how many are true
+            //assert(numHits > 0.U, "Address matches less than one ephemeral region!")
+            //assert(numHits === 1.U, "Address matches more than one ephemeral region!")
+            val hitIndex = Mux(numHits === 0.U, 0.U, PriorityEncoder(hits))
+            when (numHits === 0.U)
+            {
+               // SynthesizePrintf("numHits = 0\n\n")
+            }
 
 
 
@@ -69,6 +69,11 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     }).suggestName(s"trapper_$instance")
     
     
+    val ticket_dispenser = RegInit(0.U(16.W))
+    ticket_dispenser := Mux(io.TLInA.fire, ticket_dispenser + 1.U, ticket_dispenser)
+
+
+
 
 
     /*
@@ -111,6 +116,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         io.TLInA.ready := io.Requestor.trapperReq.ready
         io.Requestor.trapperReq.bits.BaseRequest := io.TLInA.bits
         io.Requestor.trapperReq.bits.configMatch := matchedConfig
+        io.Requestor.trapperReq.bits.ticket := ticket_dispenser
 
         // Handle inbound request logic
 
