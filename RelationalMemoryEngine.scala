@@ -32,6 +32,7 @@ case class RelMemParams (
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = true,
     maxConfigs : Int = 4,
+    maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
 
@@ -565,7 +566,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
 
 
-
+          val beatWidth = 8
+      val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       when (control_unit.io.useID)
       {
@@ -580,7 +582,8 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       .otherwise
       {
-          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, inMaxID, outMaxID), params.nFetchUnits))
+        
+          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, inMaxID, outMaxID, dataRegWidth), params.nFetchUnits))
           ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
           control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
       }

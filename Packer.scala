@@ -13,17 +13,20 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class PackerColExtractIO(inMaxID:Int, outmaxID : Int) extends Bundle {
-    val dataIn = Output(UInt(512.W))
+case class PackerColExtractIO(inMaxID:Int, outmaxID : Int, dataRegWidth: Int) extends Bundle {
+    val dataIn = Output(UInt(dataRegWidth.W))
     val dataSize = Output(UInt(10.W))
     val descriptorIn = Output(RequestDescriptor(inMaxID, outmaxID))
 }
 
 
-class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
+class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Module {
 
+
+    val beatWidth = 8
+    val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
     val io = IO(new Bundle {
-        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(inMaxID, outmaxID)))
+        val ColExtractor = Flipped(DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth)))
         val PackedLine = DecoupledIO(UInt(512.W))
         val nPacked = Output(UInt(7.W))
     })
@@ -71,7 +74,7 @@ class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
         {
             is (1.U)
             {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-7) 
+                val extractedData = io.ColExtractor.bits.dataIn(dataRegWidth-1, (dataRegWidth-1)-7) 
                 val extendedData = extractedData.pad(512)
                 val writeData = (extendedData << startBit)(511, 0)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
@@ -79,7 +82,7 @@ class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
             }
             is (2.U)
             {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-15) 
+                val extractedData = io.ColExtractor.bits.dataIn(dataRegWidth-1, (dataRegWidth-1)-15) 
                 val extendedData = extractedData.pad(512)
                 val writeData = (extendedData << startBit)(511, 0)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
@@ -87,7 +90,7 @@ class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
             }
             is(4.U)
             {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-31) 
+                val extractedData = io.ColExtractor.bits.dataIn(dataRegWidth-1, (dataRegWidth-1)-31) 
                 val extendedData = extractedData.pad(512)
                 val writeData = (extendedData << startBit)(511, 0)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
@@ -95,7 +98,7 @@ class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
             }
             is (8.U)
             {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-63) 
+                val extractedData = io.ColExtractor.bits.dataIn(dataRegWidth-1, (dataRegWidth-1)-63) 
                 val extendedData = extractedData.pad(512)
                 val writeData = (extendedData << startBit)(511, 0)
                 //SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
@@ -106,28 +109,30 @@ class PackerRME(inMaxID:Int, outmaxID : Int) extends Module {
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 8.U
             }
-            is (16.U)
-            {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-127) 
-                val extendedData = extractedData.pad(512)
-                val writeData = (extendedData << startBit)(511, 0)
-                packedLine := (packedLine & ~mask) | (writeData & mask) 
-                //packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
-                NumPackedBytes := NumPackedBytes + 16.U
-            }
-            is (32.U)
-            {
-                val extractedData = io.ColExtractor.bits.dataIn(511, 511-255) 
-                val extendedData = extractedData.pad(512)
-                val writeData = (extendedData << startBit)(511, 0)
-                packedLine := (packedLine & ~mask) | (writeData & mask) 
-                NumPackedBytes := NumPackedBytes + 32.U
-            }
-            is (64.U)
-            {
-                packedLine := io.ColExtractor.bits.dataIn
-                NumPackedBytes := NumPackedBytes + 64.U
-            }
+
+           // dont allow these for now
+            //is (16.U)
+            //{
+            //    val extractedData = io.ColExtractor.bits.dataIn(511, 511-127) 
+            //    val extendedData = extractedData.pad(512)
+            //    val writeData = (extendedData << startBit)(511, 0)
+            //    packedLine := (packedLine & ~mask) | (writeData & mask) 
+            //    //packedLine := Cat(io.ColExtractor.bits.dataIn(511, 511-127), (packedLine >> (dataInSizeBits))(511-128, 0))
+            //    NumPackedBytes := NumPackedBytes + 16.U
+            //}
+            //is (32.U)
+            //{
+            //    val extractedData = io.ColExtractor.bits.dataIn(511, 511-255) 
+            //    val extendedData = extractedData.pad(512)
+            //    val writeData = (extendedData << startBit)(511, 0)
+            //    packedLine := (packedLine & ~mask) | (writeData & mask) 
+            //    NumPackedBytes := NumPackedBytes + 32.U
+            //}
+            //is (64.U)
+            //{
+            //    packedLine := io.ColExtractor.bits.dataIn
+            //    NumPackedBytes := NumPackedBytes + 64.U
+            //}
         }
     }
     

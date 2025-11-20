@@ -14,11 +14,11 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int) extends Bundle {
-    val CacheLineIn = Flipped(DecoupledIO(UInt(512.W))) // take in an entire cache line
+case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int, dataRegWidth : Int) extends Bundle {
+    val CacheLineIn = Flipped(DecoupledIO(UInt(dataRegWidth.W))) // take in an entire cache line
     val DescriptorIn = Input(RequestDescriptor(inMaxID, outmaxID))
    // val DataSizeOut = Output(UInt(7.W)) // size in bytes
-    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID))
+    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth))
     //val Data64Out = DecoupledIO(UInt(64.W))
     //val Data32Out = DecoupledIO(UInt(32.W))
     //val Data16Out = DecoupledIO(UInt(16.W))
@@ -34,17 +34,22 @@ case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int) extends Bundle {
 
 
 
-class ColumnExtractor(inMaxID:Int, outmaxID : Int) extends Module {
+class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int) extends Module {
     /*
         We will shift in a cache line and extract the needed parts 
     */
-    val io = IO(ColumnExtractorIO(inMaxID, outmaxID))
 
-    val tmpLine = RegInit(0.U(512.W))
+
+    val beatWidth = 8
+    val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
+
+    val io = IO(ColumnExtractorIO(inMaxID, outmaxID, dataRegWidth))
+
+    val tmpLine = RegInit(0.U(dataRegWidth.W))
     val tmpDescriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
-    val tmpWire = WireInit(0.U(512.W))
+    val tmpWire = WireInit(0.U(dataRegWidth.W))
     val hasValidLine = RegInit(false.B)
-    val currentOffset = RegInit(0.U(64.W))
+
     /*
         Every cycle, we will compute the offset of the selected data and then shift it into the PackedBytesReg
 
@@ -84,18 +89,24 @@ class ColumnExtractor(inMaxID:Int, outmaxID : Int) extends Module {
        // SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
     }
 
-    val tmpWire2 = WireInit(0.U(512.W))
-    val tmpWire3 = WireInit(0.U(512.W))
+    
+
+    
+
+
+
+    val tmpWire2 = WireInit(0.U(dataRegWidth.W))
+    val tmpWire3 = WireInit(0.U(dataRegWidth.W))
     //io.DataSizeOut := 16.U
     val TotalSize = (tmpDescriptor.beatCount*8.U) // (8bytes/beat)
     val DataSize = TotalSize - (tmpDescriptor.discardFront) - (tmpDescriptor.discardBack)
     val StartIndex = tmpDescriptor.discardFront*8.U // convert bytes to bits
     val EndIndex = (TotalSize*8.U) - (tmpDescriptor.discardBack*8.U) // convert bytes to bits
-    val ShiftAmount = 512.U - TotalSize*8.U // convert to bits
+    val ShiftAmount = dataRegWidth.U - TotalSize*8.U // convert to bits
     tmpWire2 := (tmpWire >> ShiftAmount)
     val ExtractedData = (tmpWire2 >> StartIndex) & ((1.U << (EndIndex - StartIndex)) - 1.U)
     // Compute how much to shift left for alignment
-    val AlignShift = 512.U - (EndIndex - StartIndex)
+    val AlignShift = dataRegWidth.U - (EndIndex - StartIndex)
     // Left-align the extracted data
     val OutputData = ExtractedData << AlignShift
 

@@ -47,13 +47,15 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
     val tlOutParams = tlOutEdge.bundle
     val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val inMaxID = (math.pow(2, tlParams.sourceBits)-1).toInt
+    val beatWidth = 8
+    val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
     val io = IO(new Bundle{
         // Config Port 
         //val Config = Input(RMEConfigPortIO())
 
 
         // Fetch Unit Port
-        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID)))
+        val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID, dataRegWidth)))
         val ID = Output(UInt(tlParams.sourceBits.W))
         val useID = Output(Bool())
 
@@ -92,8 +94,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
             val currentlyPacking = RegInit(false.B)
             val BaseReq = Reg(new TLBundleA(tlParams))
-            val ColExtractor = Module(new ColumnExtractor(inMaxID, outMaxID))
-            val packer = Module(new PackerRME(inMaxID, outMaxID))
+            val ColExtractor = Module(new ColumnExtractor(params, inMaxID, outMaxID))
+            val packer = Module(new PackerRME(params, inMaxID, outMaxID))
             val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
             when (io.FetchUnitPort.fire)
             {

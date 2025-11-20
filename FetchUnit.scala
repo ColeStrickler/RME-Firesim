@@ -12,15 +12,15 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, outMaxID : Int) extends Bundle
+case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, outMaxID : Int, dataRegWidth: Int) extends Bundle
 {
-    val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
+    val data = Output(UInt(dataRegWidth.W)) // 64 bytes = 1 cache line
     val baseReq = Output(new TLBundleA(tlParams))
     val descriptor = Output(new RequestDescriptor(inMaxID, outMaxID))
 }
 
 
-case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, inMaxID : Int, outMaxID : Int) extends Bundle
+case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, inMaxID : Int, outMaxID : Int, dataRegWidth : Int) extends Bundle
 {
 // Requestor Port
         val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))) // Receive address to request from the Requestor Module]
@@ -42,7 +42,7 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
         
         
         // Control Unit Port
-        val ControlUnit = Decoupled(FetchUnitControlPort(tlInParams, inMaxID, outMaxID))
+        val ControlUnit = Decoupled(FetchUnitControlPort(tlInParams, inMaxID, outMaxID, dataRegWidth))
 
 }
 
@@ -67,9 +67,19 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
     val tlInParams = cachedRegionEdge.bundle
     val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
     val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
-    val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID)).suggestName(s"fetchunitio_$instance-$subInstance")
+    val beatWidth = 8
+    val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
+    println(s"dataRegWidth $dataRegWidth")
+    val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
 
-    
+        
+
+
+        assert(io.Requestor.bits.FetchReq.size <= params.maxDataSize.U)
+
+
+
+
         val fetchReq = Reg(new TLBundleA(tlOutParams))
         val baseReq = Reg(new TLBundleA(tlInParams))
         val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
@@ -139,7 +149,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
             We can cut this down to 16-24 bytes
         */
-        val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
+
+        val dataReg = RegInit(0.U(dataRegWidth.W)) // store a single cache line we get from DRAM
+
+
+
 
 
         val dataRegFull = RegInit(false.B)
