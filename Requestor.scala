@@ -164,7 +164,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         requestOffset := Mux(requestQueue.io.deq.fire, newReqOffset, requestOffset)
         when (requestQueue.io.deq.fire)
         {
-            SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
+          //  SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
         }
 
         //row := requestRow
@@ -342,7 +342,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                     //SynthesizePrintf("[REQUESTOR] size %d, P_i_j %d, R_i_j %d\n", sizeField, P_i_j, R_i_j)
                     //SynthesizePrintf("REQUESTOR nBeats %d for baseReq 0x%x %d\n", nBeats, baseRequest.address, baseRequest.source)
                     //SynthesizePrintf("[REQUESTOR] nBeats %d, discardFront %d, discardBack %d\n", nBeats, discardFront, discardBack)
-                    SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
+                   // SynthesizePrintf("[REQUESTOR] sent %d/%d\n", nDescriptorsSent, nDescriptors)
                     //SynthesizePrintf("[REQUESTOR] nSentForProcessing %d\n", nSentForProcessing)
                 }
 

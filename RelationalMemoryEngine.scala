@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = true,
-    maxConfigs : Int = 4,
+    maxConfigs : Int = 1,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
@@ -144,7 +144,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_FetchToMemoryStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_CtrlToTrapperStall =  if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
         val r_ReqDescFullStall =     if (params.withPerfCounter) Some(RegInit(0.U(64.W))) else None
-        val r_EphemeralRegionConfig_Start = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(33.W))))
+        val r_EphemeralRegionConfig_Start = RegInit(VecInit(Seq.fill(params.maxConfigs)(params.rmeaddress.U(33.W))))
         val r_EphemeralRegionConfig_Size = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(log2Ceil(params.rmeAddressSize).W))))
         val r_EphemeralRegionConfig_PhysStart = RegInit(VecInit(Seq.fill(params.maxConfigs)(0.U(47.W))))
 

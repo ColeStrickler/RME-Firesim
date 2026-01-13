@@ -291,7 +291,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
     supportsGet = TransferSizes(1, 64),
     supportsPutFull = TransferSizes(1, 64),
     supportsPutPartial = TransferSizes(1, 64),
-    fifoId = Some(0))), 8)))
+    fifoId = Some(0))), 16)))
 
   // 2. Outgoing to MBUS (master)
   val memNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
