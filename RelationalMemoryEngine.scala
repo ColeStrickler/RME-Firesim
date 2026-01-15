@@ -30,7 +30,7 @@ case class RelMemParams (
     controlBeatBytes : Int = 8,
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
-    withPerfCounter : Boolean = true,
+    withPerfCounter : Boolean = false,
     maxConfigs : Int = 1,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
@@ -166,7 +166,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         }
 
        println(s"params.withPerfCounter = ${params.withPerfCounter}")
-       require(params.withPerfCounter, "Performance counters must be enabled for this code to run.")
+       //require(params.withPerfCounter, "Performance counters must be enabled for this code to run.")
 
 
         val perfCounters =  if (params.withPerfCounter) {

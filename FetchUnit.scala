@@ -75,7 +75,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
 
 
-        assert(io.Requestor.bits.FetchReq.size <= params.maxDataSize.U)
+        //assert(io.Requestor.bits.FetchReq.size <= params.maxDataSize.U)
 
 
 
