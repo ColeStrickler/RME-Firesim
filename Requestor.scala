@@ -164,7 +164,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         requestOffset := Mux(requestQueue.io.deq.fire, newReqOffset, requestOffset)
         when (requestQueue.io.deq.fire)
         {
-          //  SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
+            SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
         }
 
         //row := requestRow
@@ -264,7 +264,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
                 io.agu.offsetAddrFromBase.valid := !sentAddrAGU
                 io.agu.offsetAddrFromBase.bits := requestOffset
-              //  SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
+                SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
 
 
 

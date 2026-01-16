@@ -75,7 +75,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
 
 
-
+    
     /*
         We need to take in the A Channel and send requests back on the D channel
     */
