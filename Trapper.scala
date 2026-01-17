@@ -7,7 +7,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip
-import midas.targetutils.SynthesizePrintf
+//import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.tilelink.TLMessages.AccessAck
@@ -85,7 +85,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         when (io.TLInA.fire)
         {
             
-            SynthesizePrintf("io.TLInA.address 0x%x --> %d size: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, io.TLInA.bits.size, matchedConfig)         
+            //SynthesizePrintf("io.TLInA.address 0x%x --> %d size: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, io.TLInA.bits.size, matchedConfig)         
         }
         
 
@@ -174,7 +174,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         when (io.TLInD.fire)
         {
             //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
-            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source)
+           // SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source)
         }
         
         io.TLInD <> currentRequest

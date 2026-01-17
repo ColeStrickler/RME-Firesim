@@ -6,7 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-import midas.targetutils.SynthesizePrintf
+//import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import _root_.subsystem.rme.subsystem.rme.IDAllocator
@@ -164,7 +164,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         requestOffset := Mux(requestQueue.io.deq.fire, newReqOffset, requestOffset)
         when (requestQueue.io.deq.fire)
         {
-            SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
+            //SynthesizePrintf("newReqOffset 0x%x\n", newReqOffset)
         }
 
         //row := requestRow
@@ -264,7 +264,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sentAddrAGU := Mux(sentAddrAGU, true.B, io.agu.offsetAddrFromBase.fire)
                 io.agu.offsetAddrFromBase.valid := !sentAddrAGU
                 io.agu.offsetAddrFromBase.bits := requestOffset
-                SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
+               // SynthesizePrintf("SentAddrAgu %d\n", sentAddrAGU)
 
 
 
@@ -332,7 +332,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                    SynthesizePrintf("AGU.fire 0x%x src=%d config %d, id=%d\n", io.agu.offset.bits, sendRequest.bits.source, config.U, descriptorOut.allocID)
+                 //   SynthesizePrintf("AGU.fire 0x%x src=%d config %d, id=%d\n", io.agu.offset.bits, sendRequest.bits.source, config.U, descriptorOut.allocID)
                 }
 
                 when (outQueue.io.enq.fire)
