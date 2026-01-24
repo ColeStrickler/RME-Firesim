@@ -89,7 +89,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             //val isBaseRequest = Output(Bool())
 
             // Control Unit Port
-            val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(outMaxID)))
+            //val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(outMaxID)))
 
             // Config Port
             val Config = Flipped(RMEConfigPortIO(params))
