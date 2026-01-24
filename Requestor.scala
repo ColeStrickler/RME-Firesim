@@ -279,14 +279,28 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 // Adjust discards based on whether front or back half is being packed
 
-                val P_i_j = io.agu.offset.bits
-                val R_i_j = (P_i_j / 8.U(32.W)) * busWidth
-                val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
-                val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
-                val discardFront = P_i_j % busWidth
-                val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
-                val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
+                //val P_i_j = io.agu.offset.bits
+                //val R_i_j = (P_i_j / 8.U(32.W)) * busWidth
+                //val nBeats = divideCeil((P_i_j % busWidth) + io.Config.ColumnWidths, 8.U(60.W))
+                //val sizeField = OHToUInt(nBeats * 8.U) // need to check this, this should usually turn out fine with col size < 16
+                //val discardFront = P_i_j % busWidth
+                //val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
+                //val discardBack = (R_i_j + nBeats*busWidth - (P_i_j + io.Config.ColumnWidths))//Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment) 
                 
+                val P_i_j = io.agu.offset.bits
+                val R_i_j = (P_i_j >> 3) * 8.U
+
+                val discard = P_i_j % busWidth
+                val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(5.W))
+                val sizeField = OHToUInt(nBeats >> 3.U) // need to check this, this should usually turn out fine with col size < 16
+                val discardFront = discard
+                val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
+                val discardBack = (nBeats << 3) - io.Config.ColumnWidths //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
+
+
+
+
+
                 /*
                     Detection logic for when we have data items that can overlap a cache line
                 */
