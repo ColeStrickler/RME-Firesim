@@ -26,7 +26,6 @@ case class ReqTicketInfo(reqIndexCount : Int, ticketWidth: Int) extends Bundle
 case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
 {
     val baseID = UInt(log2Ceil(inMaxID).W)
-    val allocID = UInt(log2Ceil(outmaxID).W)
     val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
     val discardFront = UInt(7.W)
     val discardBack = UInt(7.W)
@@ -110,7 +109,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val total_ids = outMaxID - base_allowed_id
         val start_id = base_allowed_id + (total_ids/params.maxConfigs)*config
         val num_config_alloc_id = (total_ids/params.maxConfigs) -1
-        val id_allocator = Module(new IDAllocator(start_id, start_id + num_config_alloc_id))
+        //val id_allocator = Module(new IDAllocator(start_id, start_id + num_config_alloc_id))
         
     
 
@@ -189,7 +188,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.bits.BaseReq := baseRequest
         //io.FetchUnit.bits.FetchReq.size := log2Ceil(16).U // size is log2(opsize)
         io.FetchUnit.bits.descriptor.baseID := baseRequest.source
-        io.FetchUnit.bits.descriptor.allocID := id_allocator.io.newID.bits
 
          // this will need to be handled differently once we have multiple valuable data in a single cache line
         io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
@@ -201,10 +199,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
 
 
-        id_allocator.io.retireID.bits := io.ControlUnit.bits.retireID // Control unit will retire IDs
-        id_allocator.io.retireID.valid := io.ControlUnit.valid
-        io.ControlUnit.ready := id_allocator.io.retireID.ready
-        id_allocator.io.newID.ready := false.B
+        //id_allocator.io.retireID.bits := io.ControlUnit.bits.retireID // Control unit will retire IDs
+        //id_allocator.io.retireID.valid := io.ControlUnit.valid
+        //io.ControlUnit.ready := id_allocator.io.retireID.ready
+        //id_allocator.io.newID.ready := false.B
         
 
 
@@ -311,10 +309,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 sendRequest.valid := true.B // i think since we switch states we can always set this valid
                 
 
-                id_allocator.io.newID.ready := outQueue.io.enq.ready && io.agu.offset.valid // we should then fire, claim id and advance
+               // id_allocator.io.newID.ready := outQueue.io.enq.ready && io.agu.offset.valid // we should then fire, claim id and advance
                 val descriptorOut = Wire(RequestDescriptor(inMaxID, outMaxID))
                 descriptorOut.baseID := baseRequest.source
-                descriptorOut.allocID := id_allocator.io.newID.bits
                 descriptorOut.requestPlacement := nDescriptorsSent
                 descriptorOut.discardFront := discardFront
                 descriptorOut.discardBack := discardBack
@@ -326,9 +323,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
                 outQueue.io.enq.bits.descriptor := descriptorOut
                 outQueue.io.enq.bits.BaseReq := baseRequest
-                outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.fire
-                io.agu.offset.ready := sendRequest.valid && id_allocator.io.newID.valid && outQueue.io.enq.ready
-
+                //outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.fire
+                //io.agu.offset.ready := sendRequest.valid && id_allocator.io.newID.valid && outQueue.io.enq.ready
+                outQueue.io.enq.valid :=  sendRequest.valid && io.agu.offset.fire
+                io.agu.offset.ready := sendRequest.valid && outQueue.io.enq.ready
 
                 when (io.agu.offset.fire)
                 {

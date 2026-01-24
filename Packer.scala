@@ -62,7 +62,24 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
     // will need more logic for multi-column descriptors
 
     println("startBit.getWidth %d\n", startBit.getWidth)
-    val mask = (((1.U(64.W) << colWidthBits) - 1.U) << (startBit))(511, 0)
+    //val mask = (((1.U(64.W) << colWidthBits) - 1.U) << (startBit))(511, 0)
+
+    
+
+
+    val sizeMaskExt = MuxLookup(colWidthBits, 0.U(512.W), Seq(
+        8.U  -> ((BigInt(1) << 8)  - 1).U(512.W),
+        16.U -> ((BigInt(1) << 16) - 1).U(512.W),
+        32.U -> ((BigInt(1) << 32) - 1).U(512.W),
+        64.U -> ((BigInt(1) << 64) - 1).U(512.W)
+    ))
+    val mask = (sizeMaskExt << startBit)(511,0)
+
+
+
+    //val mask = Wire(UInt(512.W))
+    //mask := 0.U
+    //mask(startBit + colWidthBits - 1.U, startBit) := 
 
     when (newDataIn)
     {

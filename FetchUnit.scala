@@ -69,6 +69,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
     val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val beatWidth = 8
     val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
+    val srcID = instance.U
     println(s"dataRegWidth $dataRegWidth")
     val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
 
@@ -128,7 +129,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire)
         currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
         beatingRequest.bits := currentRequest
-        beatingRequest.bits.source := descriptor.allocID
+        beatingRequest.bits.source := srcID
         beatingRequest.valid := currentlyBeating
         io.Requestor.ready := !currentlyBeating && !hasActiveRequest
 
@@ -194,6 +195,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
   
         // we no longer have an active request when we send it to control unit
         hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
-        io.SrcId.bits := descriptor.allocID
+        io.SrcId.bits := srcID
         io.SrcId.valid := hasActiveRequest
 }

@@ -65,7 +65,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
         // Requestor Port
-        val RequestorPort = Vec(params.maxConfigs, Decoupled(ControlUnitRequestorPort(outMaxID)))
+        //val RequestorPort = Vec(params.maxConfigs, Decoupled(ControlUnitRequestorPort(outMaxID)))
 
     }).suggestName(s"ctrlrio_$instance")
     
@@ -165,18 +165,18 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
             val config = io.FetchUnitPort.bits.descriptor.config
-            io.RequestorPort.zipWithIndex.foreach{ case (reqport, i) =>
-
-                when (config === i.U)
-                {
-                    reqport.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
-                    reqport.valid := io.FetchUnitPort.fire
-                } .otherwise
-                {
-                    reqport.bits := 0.U.asTypeOf(ControlUnitRequestorPort(outMaxID))    
-                    reqport.valid := false.B
-                }
-            }
+            //io.RequestorPort.zipWithIndex.foreach{ case (reqport, i) =>
+//
+            //    when (config === i.U)
+            //    {
+            //        reqport.bits.retireID := io.FetchUnitPort.bits.descriptor.allocID
+            //        reqport.valid := io.FetchUnitPort.fire
+            //    } .otherwise
+            //    {
+            //        reqport.bits := 0.U.asTypeOf(ControlUnitRequestorPort(outMaxID))    
+            //        reqport.valid := false.B
+            //    }
+            //}
 
 
 

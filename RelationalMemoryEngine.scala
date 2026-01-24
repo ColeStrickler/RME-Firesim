@@ -566,7 +566,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
 
 
-          val beatWidth = 8
+      val beatWidth = 8
       val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       when (control_unit.io.useID)
@@ -621,9 +621,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      requestors.zipWithIndex.foreach { case (req, i) =>
-          req.ControlUnit <> control_unit.io.RequestorPort(i)
-      }
+      //requestors.zipWithIndex.foreach { case (req, i) =>
+      //    req.ControlUnit <> control_unit.io.RequestorPort(i)
+      //}
     
 
 
