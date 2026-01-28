@@ -58,13 +58,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     }
 
     
-
+    val maxRMEOffsetBitWidth = log2Ceil(params.rmeAddressSize)
     
     
   val node = TLAdapterNode()
 
   val agu_vec = Seq.tabulate(params.maxConfigs) { i =>
-    LazyModule(new AGUTop(new AGUParams, i))
+    LazyModule(new AGUTop(new AGUParams, i, maxRMEOffsetBitWidth))
   }
 
 
@@ -571,7 +571,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
       when (control_unit.io.useID)
       {
-          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.descriptor.baseID === control_unit.io.ID && fu.valid)
+          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.baseReq.source === control_unit.io.ID && fu.valid)
           val selectedIdx = PriorityEncoder(valids.asUInt)
           control_unit.io.FetchUnitPort.valid := fetch_unit_ctrl_io(selectedIdx).valid
           control_unit.io.FetchUnitPort.bits  := fetch_unit_ctrl_io(selectedIdx).bits
@@ -583,7 +583,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       .otherwise
       {
         
-          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(inParams, inMaxID, outMaxID, dataRegWidth), params.nFetchUnits))
+          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID, dataRegWidth), params.nFetchUnits))
           ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
           control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
       }

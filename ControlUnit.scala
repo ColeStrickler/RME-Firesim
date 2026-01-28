@@ -94,12 +94,13 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
             val currentlyPacking = RegInit(false.B)
             val BaseReq = Reg(new TLBundleA(tlParams))
+            println("Ctrl unit basereq.source.width %d", io.FetchUnitPort.bits.baseReq.source.getWidth)
             val ColExtractor = Module(new ColumnExtractor(params, inMaxID, outMaxID))
             val packer = Module(new PackerRME(params, inMaxID, outMaxID))
             val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
             when (io.FetchUnitPort.fire)
             {
-                //SynthesizePrintf("[ControlUnit] io.FetchUnitPort.baseReq.address 0x%x\n", io.FetchUnitPort.bits.baseReq.address)
+                //SynthesizePrintf("[ControlUnit] Fire in! io.FetchUnitPort.baseReq.address 0x%x, src %d\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.baseReq.source)
             }
 
 
@@ -108,7 +109,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
             when (currentlyPacking)
             {
-           //  SynthesizePrintf("[ControlUnit] packed %d/64 for addr: 0x%x\n", packer.io.nPacked, BaseReq.address)
+            // SynthesizePrintf("[ControlUnit] packed %d/64 for addr: 0x%x --> ID=%d\n", packer.io.nPacked, BaseReq.address, BaseReq.source)
             // SynthesizePrintf("ColExtractor.io.CacheLineIn.ready %d, ctrl src %d\n",ColExtractor.io.CacheLineIn.ready, BaseReq.source)
             // SynthesizePrintf("Ctrl in ID %d\n", io.FetchUnitPort.bits.descriptor.baseID )
             }
@@ -130,7 +131,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
 
-            io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.descriptor.baseID === BaseReq.source)
+            io.FetchUnitPort.ready := ColExtractor.io.CacheLineIn.ready && (!currentlyPacking || io.FetchUnitPort.bits.baseReq.source === BaseReq.source)
             
 
             // this should fire after we get an entire cache line

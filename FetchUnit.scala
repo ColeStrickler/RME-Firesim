@@ -60,16 +60,18 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
 class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdge: TLEdgeIn, instance: Int, subInstance: Int)(
     implicit p: Parameters) extends Module {
 
-    val (out, tlOutEdge) = adapter.out(instance)
+    val (out, tlOutEdge) = adapter.out(0)
+    val (in, tlInEdge) = adapter.in(0)
     val tlOutA = out.a
     val tlOutD = out.d
     val tlOutParams = tlOutEdge.bundle
     val tlInParams = cachedRegionEdge.bundle
-    val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
+    val inMaxID = (math.pow(2, tlInEdge.bundle.sourceBits)-1).toInt
     val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
     val beatWidth = 8
     val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
-    val srcID = instance.U
+    val srcID = (outMaxID - subInstance).U
+    println(s"inMaxID $inMaxID outMaxID $outMaxID using SrCID ${outMaxID - subInstance}")
     println(s"dataRegWidth $dataRegWidth")
     val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
 
@@ -88,16 +90,16 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         baseReq :=  Mux( io.Requestor.fire, io.Requestor.bits.BaseReq, baseReq)
         //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
         descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
-
+         println("fetch unit basereq.source.width %d", io.ControlUnit.bits.baseReq.source.getWidth)
 
         when (io.Requestor.fire)
         {
-          //  SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor\n", instance.U, subInstance.U)
+            //SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor BaseReq.src=%d\n", instance.U, subInstance.U, io.Requestor.bits.BaseReq.source)
         }
 
         when(io.OutReq.fire)
         {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
+            //SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
         }
 
         when (io.inReply.fire)
@@ -190,7 +192,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         io.ControlUnit.bits.descriptor := descriptor
         when (dataRegFull)
         {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor base src %d alloc source %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID, descriptor.allocID)
+            //SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor base src %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID)
         }
   
         // we no longer have an active request when we send it to control unit

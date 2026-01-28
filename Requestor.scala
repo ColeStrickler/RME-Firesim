@@ -74,6 +74,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val tlInParams = tlInEdge.bundle
         val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
         val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
+        val maxRMEOffsetBitWidth = log2Ceil(params.rmeAddressSize)
 
 
          def divideCeil(a: UInt, b: UInt): UInt = {
@@ -97,7 +98,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             // Trapper Port
             val Trapper = Flipped(RequestorTrapperPort(tlInParams, params))
 
-            val agu = new RequestorAGUPort()
+            val agu = new RequestorAGUPort(maxRMEOffsetBitWidth)
 
         }).suggestName(s"requestorio_$config")
 
@@ -123,8 +124,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         */
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
-        val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 16, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 64, flow=true)) // prevent stalls
+        val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 4, flow=true))
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=true)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
@@ -158,7 +159,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val nDescriptors = RegInit(0.U(8.W))
         nDescriptors := 64.U/io.Config.ColumnWidths
         val backingEphemeralRegionStart = RegInit(0.U(33.W))
-        val requestOffset = RegInit(0.U(32.W))
+        val requestOffset = RegInit(0.U(maxRMEOffsetBitWidth.W))
         backingEphemeralRegionStart := Mux(requestQueue.io.deq.fire, EphemeralRegionConfig_Start, backingEphemeralRegionStart)
         requestOffset := Mux(requestQueue.io.deq.fire, newReqOffset, requestOffset)
         when (requestQueue.io.deq.fire)
@@ -291,11 +292,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val R_i_j = (P_i_j >> 3) * 8.U
 
                 val discard = P_i_j % busWidth
-                val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(5.W))
+                val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(6.W))
                 val sizeField = OHToUInt(nBeats >> 3.U) // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = discard
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
-                val discardBack = (nBeats << 3) - io.Config.ColumnWidths //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
+                val discardBack = (R_i_j + (nBeats << 3) - (P_i_j + io.Config.ColumnWidths)) //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
 
 
 
@@ -344,7 +345,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                 //   SynthesizePrintf("AGU.fire 0x%x src=%d config %d, id=%d\n", io.agu.offset.bits, sendRequest.bits.source, config.U, descriptorOut.allocID)
+                   // SynthesizePrintf("AGU.fire 0x%x src=%d config %d\n", io.agu.offset.bits, baseRequest.source, config.U)
                 }
 
                 when (outQueue.io.enq.fire)
