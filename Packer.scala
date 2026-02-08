@@ -6,7 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 
@@ -72,14 +72,14 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
 
 
     val sizeMaskExt = Wire(UInt(512.W))
-    when (colWidthBits === 8.U) {
-    sizeMaskExt := "hFF".U(512.W)   // lower 8 bits set
-    } .elsewhen (colWidthBits === 4.U) {
-    sizeMaskExt := "hF".U(512.W)    // lower 4 bits set
-    } .elsewhen (colWidthBits === 2.U) {
-    sizeMaskExt := "h3".U(512.W)    // lower 2 bits set
+    when (DataSize === 8.U) {
+    sizeMaskExt := "hFFFFFFFFFFFFFFFF".U(512.W)   // lower 8 bits set
+    } .elsewhen (DataSize  === 4.U) {
+    sizeMaskExt := "hFFFFFFFF".U(512.W)    // lower 4 bytes set
+    } .elsewhen (DataSize  === 2.U) {
+    sizeMaskExt := "hFFFF".U(512.W)    // lower 2 bytes set
     } .otherwise { // 1 bit
-    sizeMaskExt := "h1".U(512.W)    // lower 1 bit set
+    sizeMaskExt := "hFF".U(512.W)    // lower 1 bytes set
     }
 
 
@@ -124,6 +124,12 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
                 val writeData = (extendedData << startBit)(511, 0)
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 4.U
+
+                SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
+                SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
+                SynthesizePrintf("\nwrite Data: 0x%x\n", writeData)
+                SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
+                SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
             }
             is (8.U)
             {

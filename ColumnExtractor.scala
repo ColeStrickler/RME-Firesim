@@ -6,7 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 
@@ -86,7 +86,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int) exten
     hasValidLine := io.CacheLineIn.fire
     when (io.CacheLineIn.fire)
     {
-      //  SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
+        SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
     }
 
     
@@ -112,9 +112,9 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int) exten
 
     when (io.Packer.fire)
     {
-        //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] tmpWire2: 0x%x\n", tmpWire2)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
+        SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
+       // SynthesizePrintf("[COLUMN EXTRACTOR] tmpWire2: 0x%x\n", tmpWire2)
+       // SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
         //SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
     }
 

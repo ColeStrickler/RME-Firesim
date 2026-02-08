@@ -6,7 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 
@@ -79,10 +79,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
 
         //assert(io.Requestor.bits.FetchReq.size <= params.maxDataSize.U)
-
-
-
-
         val fetchReq = Reg(new TLBundleA(tlOutParams))
         val baseReq = Reg(new TLBundleA(tlInParams))
         val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
@@ -99,12 +95,12 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         when(io.OutReq.fire)
         {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, io.OutReq.bits.address)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, fetchReq.address)
         }
 
         when (io.inReply.fire)
         {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM\n", instance.U, subInstance.U)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM 0x%x\n", instance.U, subInstance.U, io.inReply.bits.data)
         }
 
 
@@ -172,7 +168,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
         when (io.inReply.fire)
         {
-            //SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
+          //  SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
         }
 
         /*
@@ -192,7 +188,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         io.ControlUnit.bits.descriptor := descriptor
         when (dataRegFull)
         {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> io.ControlUnit.valid=1 BaseAddress 0x%x, 0x%x, baseReqSource: %d, descriptor base src %d\n", instance.U, subInstance.U, baseReq.address, fetchReq.address, baseReq.source, descriptor.baseID)
+            SynthesizePrintf("[FetchUnit_%d_%d] ==>dataReg 0x%x\n", instance.U, subInstance.U, dataReg)
         }
   
         // we no longer have an active request when we send it to control unit

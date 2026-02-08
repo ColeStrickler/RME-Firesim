@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = false,
-    maxConfigs : Int = 1,
+    maxConfigs : Int = 4,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 

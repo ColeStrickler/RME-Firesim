@@ -6,7 +6,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import _root_.subsystem.rme.subsystem.rme.IDAllocator
@@ -62,7 +62,7 @@ case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
     //val doGen = Decoupled(Bool())
     val offsetAddrFromBase = Decoupled(UInt(bitwidth.W))    // input
     val offset = Flipped(Decoupled(UInt(bitwidth.W)))       // output
-    val data_size = Output(UInt(8.W))                       // used by agu
+    val data_size = Output(UInt(6.W))                       // used by agu
 }
 
 
@@ -293,7 +293,23 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 val discard = P_i_j % busWidth
                 val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(6.W))
-                val sizeField = OHToUInt(nBeats >> 3.U) // need to check this, this should usually turn out fine with col size < 16
+
+
+                val sizeTransaction = WireInit(0.U(io.FetchUnit.bits.FetchReq.size.getWidth.W))
+                assert(nBeats < 4.U)
+                when (nBeats === 3.U) {
+                    sizeTransaction := 5.U
+                } .elsewhen (nBeats === 2.U) {
+                    sizeTransaction := 4.U
+                } .otherwise { // 1 bit
+                    sizeTransaction := 3.U
+                }
+
+
+
+
+
+                val sizeField = sizeTransaction // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = discard
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
                 val discardBack = (R_i_j + (nBeats << 3) - (P_i_j + io.Config.ColumnWidths)) //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
@@ -345,7 +361,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                   // SynthesizePrintf("AGU.fire 0x%x src=%d config %d\n", io.agu.offset.bits, baseRequest.source, config.U)
+                    SynthesizePrintf("AGU.fire 0x%x src=%d config %d\n", io.agu.offset.bits, baseRequest.source, config.U)
                 }
 
                 when (outQueue.io.enq.fire)

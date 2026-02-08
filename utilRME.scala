@@ -8,7 +8,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.tilelink.TLMessages.AccessAck
@@ -368,7 +368,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
    // when(outTL.a.fire) { SynthesizePrintf("[DTUUncachedRegion] forwarded request 0x%x\n", forwardReg.size) }
     when (outTL.a.fire)
     {
-      //SynthesizePrintf("outTL.a.fire 0x%x %d\n", outTL.a.bits.source, outTL.a.bits.opcode)
+      SynthesizePrintf("outTL.a.fire 0x%x %d --> data 0x%x\n", outTL.a.bits.address, outTL.a.bits.opcode, outTL.a.bits.data)
     }
   }
 }
