@@ -5,7 +5,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 
@@ -13,9 +13,9 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class ControlUnitRequestorPort(maxID : Int) extends Bundle
+case class ControlUnitRequestorPort(tlParams : TLBundleParameters) extends Bundle
 {
-    val retireID = Output(UInt(log2Ceil(maxID).W))
+    val ID = Output(UInt(tlParams.sourceBits.W))
 }
 
 case class ControlUnitTrapperPort(tlParams : TLBundleParameters) extends Bundle 
@@ -58,6 +58,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
         val FetchUnitPort = Flipped(DecoupledIO(FetchUnitControlPort(tlParams, inMaxID, outMaxID, dataRegWidth)))
         val ID = Output(UInt(tlParams.sourceBits.W))
         val useID = Output(Bool())
+        //val ticket = Output(UInt(16.W)) // help enforce ordering semantics
 
         // Trapper Port
         val TrapperPort = DecoupledIO(ControlUnitTrapperPort(tlParams))
@@ -65,7 +66,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
 
 
         // Requestor Port
-        //val RequestorPort = Vec(params.maxConfigs, Decoupled(ControlUnitRequestorPort(outMaxID)))
+        //val RequestorPort = Valid(ControlUnitRequestorPort(tlParams))
 
     }).suggestName(s"ctrlrio_$instance")
     
@@ -100,12 +101,14 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
             when (io.FetchUnitPort.fire)
             {
-                //SynthesizePrintf("[ControlUnit] Fire in! io.FetchUnitPort.baseReq.address 0x%x, src %d\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.baseReq.source)
+                SynthesizePrintf("[ControlUnit] Fire in! io.FetchUnitPort.baseReq.address 0x%x, src %d\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.baseReq.source)
             }
 
 
             io.ID := BaseReq.source
             io.useID := currentlyPacking
+
+
 
             when (currentlyPacking)
             {

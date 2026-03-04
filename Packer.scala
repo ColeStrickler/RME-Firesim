@@ -51,7 +51,7 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
 
     when (io.ColExtractor.fire)
     {
-        //SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
+        SynthesizePrintf("[PACKER] --> received extracted column 0x%x, size: %d num packed %d\n", io.ColExtractor.bits.dataIn, io.ColExtractor.bits.dataSize, NumPackedBytes)
     }
 
     /*
@@ -73,12 +73,12 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
 
     val sizeMaskExt = Wire(UInt(512.W))
     when (DataSize === 8.U) {
-    sizeMaskExt := "hFFFFFFFFFFFFFFFF".U(512.W)   // lower 8 bits set
+    sizeMaskExt := "hFFFFFFFFFFFFFFFF".U(512.W)   // lower 8 bytes set
     } .elsewhen (DataSize  === 4.U) {
     sizeMaskExt := "hFFFFFFFF".U(512.W)    // lower 4 bytes set
     } .elsewhen (DataSize  === 2.U) {
     sizeMaskExt := "hFFFF".U(512.W)    // lower 2 bytes set
-    } .otherwise { // 1 bit
+    } .otherwise { // 1 byte
     sizeMaskExt := "hFF".U(512.W)    // lower 1 bytes set
     }
 
@@ -95,6 +95,7 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
 
     when (newDataIn)
     {
+        //SynthesizePrintf("[PACKER] packed %d/64\n", NumPackedBytes)
         //SynthesizePrintf("[PACKER] --> current line 0x%x\n", packedLine)
         // valid data sizes
         assert(DataSize === 1.U || DataSize === 2.U || DataSize === 4.U || DataSize === 8.U ||
@@ -125,11 +126,12 @@ class PackerRME(params : RelMemParams, inMaxID:Int, outmaxID : Int) extends Modu
                 packedLine := (packedLine & ~mask) | (writeData & mask) 
                 NumPackedBytes := NumPackedBytes + 4.U
 
-                SynthesizePrintf("extracted Data: 0x%x\n", extractedData)
-                SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
+                SynthesizePrintf("(PACKER) extracted Data: 0x%x\n", extractedData)
+                //SynthesizePrintf("\nextended Data: 0x%x\n", extendedData)
                 SynthesizePrintf("\nwrite Data: 0x%x\n", writeData)
-                SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
-                SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
+                SynthesizePrintf("\nafter write: 0x%x\n\n", (packedLine & ~mask) | (writeData & mask))
+                //SynthesizePrintf("Start Bit %d, mask 0x%x, Packed line 0x%x\n", startBit, mask, packedLine)
+                //SynthesizePrintf("io.ColExtractor.bits.descriptorIn.requestPlacement %d\n", io.ColExtractor.bits.descriptorIn.requestPlacement)
             }
             is (8.U)
             {

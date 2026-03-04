@@ -6,7 +6,7 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLBundleA
 import freechips.rocketchip.regmapper._
 import freechips.rocketchip
-//import midas.targetutils.SynthesizePrintf
+import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.tilelink.TLMessages.AccessAck
@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = false,
-    maxConfigs : Int = 4,
+    maxConfigs : Int = 8,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
@@ -526,6 +526,19 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         Mux(msbA === msbB, a < b, msbA > msbB)
       }
 
+      // basically we want to promote a ticket that is being packed...
+      def srcIsBeingPacked(a: UInt, packingSrc: UInt) : Bool = {
+          a === packingSrc
+      } 
+
+      val reqBeingPackedVec = Wire(Vec(requestors.length, Bool()))
+      val reqBeingPackedExists = Wire(Bool())
+      val reqBPacked = requestors.zipWithIndex.map{case (req, i) =>
+          srcIsBeingPacked(req.FetchUnit.bits.BaseReq.source, control_unit.io.ID) && req.FetchUnit.valid && control_unit.io.useID
+      }
+      reqBeingPackedVec := reqBPacked
+      reqBeingPackedExists := reqBeingPackedVec.reduce(_ || _)
+
 
       val minReqTicket = reqTicketVec.reduceTree{ (a, b) => 
         val aBetter =
@@ -546,11 +559,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val requestorArb = Module(new RRArbiter(requestors.head.FetchUnit.bits.cloneType, params.maxConfigs))
       requestorArb.io.in <> reqFetchIO
       reqFetchIO.zipWithIndex.foreach {case (req, i) => 
-        req.ready := requestorArb.io.in(i).ready && (minReqTicket.index === i.U)
-        requestorArb.io.in(i).valid := req.valid && (minReqTicket.index === i.U)
-        when (req.valid)
+        req.ready := requestorArb.io.in(i).ready && Mux(reqBeingPackedExists, reqBeingPackedVec(i), (minReqTicket.index === i.U)) 
+        requestorArb.io.in(i).valid := req.valid && Mux(reqBeingPackedExists, reqBeingPackedVec(i), (minReqTicket.index === i.U)) 
+        when (reqBeingPackedVec(i))
         {
-         // SynthesizePrintf("req(%d).valid minReqTicketIndex %d, valid %d\n", i.U, minReqTicket.index, minReqTicket.valid)
+          SynthesizePrintf("(CTRLFLOW) %d being packed\n", control_unit.io.ID)
         }
       }
 
@@ -708,12 +721,13 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
 
     //val uncached = LazyModule(new DTUUncachedRegion)
       
-    sbus.coupleTo("dtu_uncached") {
-      mbus.dtu_uncached_region.get.cpuNode := TLFragmenter(sbus.beatBytes, sbus.blockBytes, holdFirstDeny=true) := TLBuffer(1) := _
+    pbus.coupleTo("dtu_uncached") {
+      mbus.dtu_uncached_region.get.cpuNode := 
+      TLBuffer(1)  :=  _
     }
-      // Connect uncached region to memory bus (MBUS)
+      // Connect uncached region to memory bus (MBUS) := TLFragmenter(mbus.beatBytes, mbus.blockBytes, holdFirstDeny=true)
 
-    mbus.coupleFrom("simple_uncached_region_mem") { _ := TLFragmenter(mbus.beatBytes, mbus.blockBytes, holdFirstDeny=true) := mbus.dtu_uncached_region.get.memNode }
+    mbus.coupleFrom("simple_uncached_region_mem") { _ := mbus.dtu_uncached_region.get.memNode }
           
           
       mbus.rme.get

@@ -90,17 +90,17 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         when (io.Requestor.fire)
         {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor BaseReq.src=%d\n", instance.U, subInstance.U, io.Requestor.bits.BaseReq.source)
+           // SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor BaseReq.src=%d\n", instance.U, subInstance.U, io.Requestor.bits.BaseReq.source)
         }
 
         when(io.OutReq.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, fetchReq.address)
+           // SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, fetchReq.address)
         }
 
         when (io.inReply.fire)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM 0x%x\n", instance.U, subInstance.U, io.inReply.bits.data)
+           // SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM 0x%x\n", instance.U, subInstance.U, io.inReply.bits.data)
         }
 
 
@@ -188,7 +188,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         io.ControlUnit.bits.descriptor := descriptor
         when (dataRegFull)
         {
-            SynthesizePrintf("[FetchUnit_%d_%d] ==>dataReg 0x%x\n", instance.U, subInstance.U, dataReg)
+          //  SynthesizePrintf("[FetchUnit_%d_%d] ==>dataReg 0x%x\n", instance.U, subInstance.U, dataReg)
         }
   
         // we no longer have an active request when we send it to control unit

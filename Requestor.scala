@@ -90,7 +90,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             //val isBaseRequest = Output(Bool())
 
             // Control Unit Port
-            //val ControlUnit = Flipped(Decoupled(ControlUnitRequestorPort(outMaxID)))
+            //val ControlUnit = Flipped(Valid(ControlUnitRequestorPort(tlInParams)))
 
             // Config Port
             val Config = Flipped(RMEConfigPortIO(params))
@@ -182,7 +182,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         baseRequest := baseRequest
         requestQueue.io.enq <> io.Trapper.trapperReq  // queue up requests to prevent stalls
         io.Trapper.trapperReq.ready := requestQueue.io.enq.ready
-        currentTicket := 0.U
+        //currentTicket := 0.U
 
         io.FetchUnit.valid := false.B // default to false
         io.FetchUnit.bits.FetchReq := baseRequest // default 
@@ -228,6 +228,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
             //SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.address, stateReg)
         
+        }
+
+        when (outQueue.io.deq.valid)
+        {
+            SynthesizePrintf("Req for config %d, BaseReq %x, ticket %d\n", outQueue.io.deq.bits.descriptor.config, outQueue.io.deq.bits.BaseReq.address, outQueue.io.deq.bits.descriptor.ticket)
         }
 
 
@@ -361,7 +366,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                    SynthesizePrintf("AGU.fire 0x%x src=%d config %d\n", io.agu.offset.bits, baseRequest.source, config.U)
+                    SynthesizePrintf("AGU.fire 0x%x srcAddr=0x%x config %d\n", io.agu.offset.bits, baseRequest.address, config.U)
                 }
 
                 when (outQueue.io.enq.fire)

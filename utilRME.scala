@@ -282,7 +282,8 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
   // Device info (optional, useful for reg/resource mapping)
   val device = new SimpleDevice("simpleForward", Seq("simple,forward"))
   val addr = AddressSet.misaligned(0x180000000L, 0x10000000L)
-  // 1. Incoming from FBUS (slave)
+
+
   val cpuNode = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
     address = addr,
     resources = device.reg,
@@ -291,7 +292,12 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
     supportsGet = TransferSizes(1, 64),
     supportsPutFull = TransferSizes(1, 64),
     supportsPutPartial = TransferSizes(1, 64),
-    fifoId = Some(0))), 8)))
+    fifoId = Some(0))), 8))) // THIS MAY BE THE CAUSE OF BOOM CORE DIFFERENCES --> 16 TRANSFER SIZES INSTEAD OF 8 
+
+
+
+
+
 
   // 2. Outgoing to MBUS (master)
   val memNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
@@ -315,6 +321,8 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
   {
     id := id_allocator.io.newID.bits
   }
+
+  println(s"inTL.A.params ${inTL.params}, outTL.a.params ${outTL.params}")
   
 
   id_allocator.io.retireID.valid := outTL.d.fire
@@ -342,7 +350,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
 
       when (inTL.a.valid )
       {
-        //SynthesizePrintf("(%d, %d, %d, %d, %d)\n", first, last, done, count, counter)
+          SynthesizePrintf("data 0x%x, size 0x%x\n", inTL.a.bits.data, inTL.a.bits.size)
         //assert(false.B, "!canSend && inTL.a.valid")
       }
 
@@ -374,7 +382,188 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
 }
 
 
+/*
 
+class NTStoreRegion(implicit p: Parameters) extends LazyModule {
+  // Device info (optional, useful for reg/resource mapping)
+  val device = new SimpleDevice("simpleForward", Seq("simple,forward"))
+  val addr = AddressSet.misaligned(0x180000000L, 0x10000000L)
+
+  // Receives from CPU
+  val cpuNode = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
+    address = addr,
+    resources = device.reg,
+    regionType = RegionType.UNCACHED,
+    executable = false,
+    supportsGet = TransferSizes(1, 64),
+    supportsPutFull = TransferSizes(1, 64),
+    supportsPutPartial = TransferSizes(1, 64),
+    fifoId = Some(0))), 8))) // THIS MAY BE THE CAUSE OF BOOM CORE DIFFERENCES --> 16 TRANSFER SIZES INSTEAD OF 8 
+
+
+
+    val cacheClientNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
+      name = "NTStoreClient",
+      sourceId = IdRange(0, 7)
+    )))))
+
+
+  // 2. Outgoing to MBUS (master)
+  val memNode = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
+    name = "SimpleForwardClient",
+    sourceId = IdRange(0, 7)
+  )))))
+  //memNode := cpuNode
+  lazy val module = new LazyModuleImp(this) {
+    //Forward requests: cpuNode.in -> memNode.out
+    val (inTL, inEdge) = cpuNode.in(0)   // From SBus
+    val (outTL, outEdge) = memNode.out(0) // To MBUS
+    // Register to hold the current request being forwarded
+    val forwardReg = Reg(new TLBundleA(inTL.params))
+    
+    val id_allocator = Module(new IDAllocator(0, 7))
+    val id = Reg(UInt(3.W))
+    id_allocator.io.newID.ready := inTL.a.fire
+    when (id_allocator.io.newID.fire)
+    {
+      id := id_allocator.io.newID.bits
+    }
+
+    println(s"inTL.A.params ${inTL.params}, outTL.a.params ${outTL.params}")
+    
+    id_allocator.io.retireID.valid := outTL.d.fire
+    id_allocator.io.retireID.bits := id
+    forwardReg := Mux(inTL.a.fire, inTL.a.bits, forwardReg)
+    val (first, last, done, count, counter) = inEdge.firstlast2(inTL.a)
+    val canSend = RegInit(false.B)
+    val readyNewReq = RegInit(true.B)
+    canSend := Mux(canSend, !outTL.a.fire, inTL.a.fire)
+    readyNewReq := Mux(readyNewReq, !inTL.a.fire, inTL.d.fire)
+    inTL.a.ready := readyNewReq
+    outTL.a.bits := forwardReg          
+    outTL.a.bits.source := id         
+    outTL.a.bits.address := forwardReg.address -  0x10000000.U
+    outTL.a.valid := canSend
+
+
+
+
+  val dataReg = RegInit(0.U(512.W))
+  val dataRegWriteIdx = RegInit(0.U(10.W))
+  
+  /*
+    Handle Communication with cache
+  */
+  val (outTLCache, cacheOutEdge) = cacheClientNode.out(0) // To SBUS
+  val startID = cacheOutEdge.client.clients.head.sourceId.start
+
+  val acquire :: sent_acquire :: update :: merge :: release :: idle :: Nil = Enum(6)
+  val stateReg = RegInit(idle)
+
+  val busWidth = outTLCache.a.bits.data.getWidth
+  val dataregWriteIdxMax = 512/busWidth
+  val nReqSent = RegInit(0.U(dataregWriteIdxMax.U))
+  switch (stateReg)
+  {
+    is (idle) {
+
+      dataRegWriteIdx := 0.U
+      // Not sure if this is the correct one?? Either way we need something like this
+      val PermReq  = cacheOutEdge.AcquireBlock(startID.U, forwardReg.address -  0x10000000.U, 6.U, TLPermissions.toT)
+      outTLCache.a.bits := PermReq._2
+
+      /*
+          The L2 will handle requests from this client a bit differently. 
+      
+          If not present in the directory, it will just drop it because nothing needs to be done
+      */
+
+
+
+
+    }
+
+
+    is (sent_acquire) { // state for waiting on reply to acquire
+      when (outTLCache.d.fire && outTLCache.d.bits.opcode === TLMessages.GrantData) // Block is in Cache, we must update
+      {
+        // Do we need a Grant ACK??
+        dataReg := Cat(outTLCache.d.bits.data, (dataReg >> busWidth)((dataReg.getWidth - 1)-busWidth, 0))
+        dataRegWriteIdx := dataRegWriteIdx + 1.U
+        when (dataRegWriteIdx === (dataregWriteIdxMax-1).U)
+        {
+          stateReg := update
+        }
+      }
+
+
+      when (outTLCache.d.fire && outTLCache.d.bits.opcode === TLMessages.Grant) // Block not in cache, ignore
+      {
+          stateReg := idle
+      } 
+
+
+    }
+
+
+    is (merge) {
+        val putAddr = forwardReg.address -  0x10000000.U
+        val offsetIntoLine = putAddr(5, 0) //putAddr % 0x40.U
+
+
+        dataReg := (dataReg | mask) & shiftedData
+
+      
+    }
+
+    is (update) { // here we actually write the data, then write it back 
+
+
+      val putAddr = forwardReg.address -  0x10000000.U
+      val DataWire = Wire(0.U(busWidth.W))
+
+      /* 
+        Need to hook up DataWire to dataReg
+      */
+
+      val putFullReq = cacheOutEdge.Put(startID.U, putAddr, 6.U, DataWire) // used to write back the data
+      outTLCache.a.bits := putFullReq
+      outTLCache.a.valid := true.B
+      when (outTLCache.a.fire)
+      {
+        nReqSent := nReqSent + 1.U
+      }
+
+
+
+      when (nReqSent == (dataregWriteIdxMax-1).U && outTLCache.a.fire)
+      {
+        stateReg := release
+      }
+
+    }
+
+    is (release) {
+      val releaseAddr = forwardReg.address -  0x10000000.U
+      val ReleaseReq = cacheOutEdge.Release(startID.U, releaseAddr, 6.U, TLPermissions.toN)
+
+      outTLCache.c.bits := ReleaseReq._2
+      outTLCache.c.valid := true.B
+      when (outTLCache.c.fire)
+      {
+        stateReg := idle
+      }
+
+    }
+
+  }
+
+
+  }
+}
+
+
+*/
 
 
 
