@@ -116,7 +116,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         io.TLInA.ready := io.Requestor.trapperReq.ready
         io.Requestor.trapperReq.bits.BaseRequest := io.TLInA.bits
         io.Requestor.trapperReq.bits.configMatch := matchedConfig
-        io.Requestor.trapperReq.bits.ticket := ticket_dispenser
+       // io.Requestor.trapperReq.bits.ticket := ticket_dispenser
 
         // Handle inbound request logic
 

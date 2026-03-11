@@ -350,7 +350,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
 
       when (inTL.a.valid )
       {
-          SynthesizePrintf("data 0x%x, size 0x%x\n", inTL.a.bits.data, inTL.a.bits.size)
+          //SynthesizePrintf("data 0x%x, size 0x%x\n", inTL.a.bits.data, inTL.a.bits.size)
         //assert(false.B, "!canSend && inTL.a.valid")
       }
 

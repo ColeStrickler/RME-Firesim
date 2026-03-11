@@ -31,7 +31,8 @@ case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
     val discardBack = UInt(7.W)
     val beatCount = UInt(4.W)
     val config = UInt(4.W)
-    val ticket = UInt(16.W)
+    val done  = Bool()
+  //  val ticket = UInt(16.W)
 }
 
 
@@ -39,7 +40,7 @@ case class TrapperReq(params : TLBundleParameters, relmemParams : RelMemParams) 
 {
     val BaseRequest = Output(new TLBundleA(params))
     val configMatch = Output(UInt(log2Ceil(relmemParams.maxConfigs).W))
-    val ticket = Output(UInt(16.W))
+   // val ticket = Output(UInt(16.W))
 }
 
 // We want to change the entire thing to be wrapped in decoupledIO so that we can put in queue
@@ -86,6 +87,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val io = IO(new Bundle {
             // Fetch Unit Port
             val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))
+            //val done = Output(Bool())
             //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
             //val isBaseRequest = Output(Bool())
 
@@ -114,8 +116,6 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         
     
 
-
-        val DatabaseBaseAddress = params.rmeaddress.U
         /*
             We operate on a single bit state machine:
 
@@ -125,7 +125,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 4, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=true)) // prevent stalls
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 20, flow=true)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
@@ -147,7 +147,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val EphemeralRegionConfig_Start = io.Config.EphemeralRegionConfig_Start(requestQueue.io.deq.bits.configMatch)
 
         val newReqOffset = (requestQueue.io.deq.bits.BaseRequest.address - config_physStart)(31, 0)
-
+        when(requestQueue.io.deq.fire)
+        {
+            SynthesizePrintf("NewReqOffset 0x%x = 0x%x - 0x%x\n", newReqOffset, requestQueue.io.deq.bits.BaseRequest.address, config_physStart)
+        }
 
 
         // This should give us the total size in bytes we need to grab
@@ -178,6 +181,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         /* 
             Defaults
         */
+      //  io.done := false.B
         stateReg := stateReg
         baseRequest := baseRequest
         requestQueue.io.enq <> io.Trapper.trapperReq  // queue up requests to prevent stalls
@@ -226,13 +230,13 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         when (requestQueue.io.deq.fire)
         {
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
-            //SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.address, stateReg)
+            SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.BaseRequest.address, stateReg)
         
         }
 
         when (outQueue.io.deq.valid)
         {
-            SynthesizePrintf("Req for config %d, BaseReq %x, ticket %d\n", outQueue.io.deq.bits.descriptor.config, outQueue.io.deq.bits.BaseReq.address, outQueue.io.deq.bits.descriptor.ticket)
+            SynthesizePrintf("Req for config %d, BaseReq %x,\n", outQueue.io.deq.bits.descriptor.config, outQueue.io.deq.bits.BaseReq.address)
         }
 
 
@@ -253,7 +257,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                // nSentForProcessing := 0.U    
                 stateReg := Mux(requestQueue.io.deq.fire, active, idle)
                 baseRequest := requestQueue.io.deq.bits.BaseRequest
-                currentTicket := requestQueue.io.deq.bits.ticket
+               // currentTicket := requestQueue.io.deq.bits.ticket
                 io.agu.offsetAddrFromBase.valid := false.B
                 io.agu.offsetAddrFromBase.bits := 0.U
                // io.agu.doGen.bits := false.B
@@ -335,7 +339,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val isFrontHalf = isFirst
                 //val discardFrontEffective = Mux(isFrontHalf, discardFront, 0.U)
                 //val discardBackEffective  = Mux(isFrontHalf, 0.U, discardBack)
-
+                val done = Wire(Bool())
+                done := nDescriptorsSent === nDescriptors - 1.U && outQueue.io.enq.fire
 
 
                 val sendRequest = Wire(Valid(new TLBundleA(tlOutParams)))
@@ -353,7 +358,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 descriptorOut.discardBack := discardBack
                 descriptorOut.beatCount := nBeats
                 descriptorOut.config := config.U
-                descriptorOut.ticket := currentTicket
+                descriptorOut.done := done
+                //descriptorOut.ticket := currentTicket
                 assert(nBeats > 0.U && nBeats <= 5.U)
 
                 outQueue.io.enq.bits.FetchReq := sendRequest.bits
@@ -385,6 +391,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 nDescriptorsSent := nDescriptorsSent + outQueue.io.enq.fire
 
                 stateReg := Mux(nDescriptorsSent === nDescriptors - 1.U && outQueue.io.enq.fire, idle, stateReg)
+
+                //io.done := c
             }
         }
         

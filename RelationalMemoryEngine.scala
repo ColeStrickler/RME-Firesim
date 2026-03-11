@@ -64,7 +64,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   val node = TLAdapterNode()
 
   val agu_vec = Seq.tabulate(params.maxConfigs) { i =>
-    LazyModule(new AGUTop(new AGUParams, i, maxRMEOffsetBitWidth))
+    LazyModule(new AGUTop(new AGUParams2, i, maxRMEOffsetBitWidth))
   }
 
 
@@ -509,15 +509,15 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
         [[Ticket prioritization logic]]
       */
-      val reqTicketVec = Wire(Vec(requestors.length, new ReqTicketInfo(requestors.length, 16)))
-      val reqTickets = requestors.zipWithIndex.map{case (req, i) =>
-        (req.FetchUnit.bits.descriptor.ticket, i.U, req.FetchUnit.valid)  
-      }
-      reqTicketVec.zipWithIndex.foreach {case (reqT, i) =>
-        reqT.ticket := reqTickets(i)._1
-        reqT.index :=  reqTickets(i)._2
-        reqT.valid := reqTickets(i)._3
-      }
+      //val reqTicketVec = Wire(Vec(requestors.length, new ReqTicketInfo(requestors.length, 16)))
+      //val reqTickets = requestors.zipWithIndex.map{case (req, i) =>
+      //  (req.FetchUnit.bits.descriptor.ticket, i.U, req.FetchUnit.valid)  
+      //}
+      //reqTicketVec.zipWithIndex.foreach {case (reqT, i) =>
+      //  reqT.ticket := reqTickets(i)._1
+      //  reqT.index :=  reqTickets(i)._2
+      //  reqT.valid := reqTickets(i)._3
+      //}
 
       def ticketCompare(a: UInt, b: UInt): Bool = {
         val msbA = a(a.getWidth-1)
@@ -540,27 +540,52 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       reqBeingPackedExists := reqBeingPackedVec.reduce(_ || _)
 
 
-      val minReqTicket = reqTicketVec.reduceTree{ (a, b) => 
-        val aBetter =
-          a.valid && (
-            !b.valid || ticketCompare(a.ticket, b.ticket)
-          )
-        Mux(aBetter, a, b)
-      }
+      //val minReqTicket = reqTicketVec.reduceTree{ (a, b) => 
+      //  val aBetter =
+      //    a.valid && (
+      //      !b.valid || ticketCompare(a.ticket, b.ticket)
+      //    )
+      //  Mux(aBetter, a, b)
+      //}
       val reqFetchIO = requestors.map(_.FetchUnit)
-
-
+      val reqdoneIO = requestors.map(_.FetchUnit.bits.descriptor.done)
 
       val fetchReadyVec = fetch_units.map(fetch_unit => fetch_unit.Requestor.ready)
       val ohFetchUnitsReady = PriorityEncoderOH(fetchReadyVec)
       val fetchUnitReady = fetchReadyVec.reduce(_||_) 
       
+
+      val RequestorActive = RegInit(false.B)
+      val ActiveRequestor = RegInit(0.U(log2Ceil(params.maxConfigs).W))
+      val active_vector = reqFetchIO.map(req => req.fire)
+
+
+      reqFetchIO.zipWithIndex.foreach {case (req, i) =>
+          
+          when (reqdoneIO(i) && req.fire && ActiveRequestor === i.U)
+          {
+            RequestorActive :=  false.B
+          }
+          .elsewhen (req.fire) 
+          {
+            ActiveRequestor := i.U
+            RequestorActive := true.B
+          }
+      }
+      
       // this should fire to the right one
+
+
+
+      /*
+        Before, I think we were swapping out the active request when it was still in the queue
+
+      */
       val requestorArb = Module(new RRArbiter(requestors.head.FetchUnit.bits.cloneType, params.maxConfigs))
       requestorArb.io.in <> reqFetchIO
       reqFetchIO.zipWithIndex.foreach {case (req, i) => 
-        req.ready := requestorArb.io.in(i).ready && Mux(reqBeingPackedExists, reqBeingPackedVec(i), (minReqTicket.index === i.U)) 
-        requestorArb.io.in(i).valid := req.valid && Mux(reqBeingPackedExists, reqBeingPackedVec(i), (minReqTicket.index === i.U)) 
+        req.ready := requestorArb.io.in(i).ready && (!RequestorActive || ActiveRequestor === i.U)
+        requestorArb.io.in(i).valid := req.valid && (!RequestorActive || ActiveRequestor === i.U)
         when (reqBeingPackedVec(i))
         {
           SynthesizePrintf("(CTRLFLOW) %d being packed\n", control_unit.io.ID)
