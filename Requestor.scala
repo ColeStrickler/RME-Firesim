@@ -125,7 +125,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 4, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 20, flow=true)) // prevent stalls
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=true)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
@@ -149,7 +149,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val newReqOffset = (requestQueue.io.deq.bits.BaseRequest.address - config_physStart)(31, 0)
         when(requestQueue.io.deq.fire)
         {
-            SynthesizePrintf("NewReqOffset 0x%x = 0x%x - 0x%x\n", newReqOffset, requestQueue.io.deq.bits.BaseRequest.address, config_physStart)
+            //SynthesizePrintf("NewReqOffset 0x%x = 0x%x - 0x%x\n", newReqOffset, requestQueue.io.deq.bits.BaseRequest.address, config_physStart)
         }
 
 
@@ -230,13 +230,13 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         when (requestQueue.io.deq.fire)
         {
             //SynthesizePrintf("sumColWidths %d, en col count %d, requestOffset 0x%x\n", sumColWidths, io.Config.EnabledColumnCount, requestOffset)      
-            SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.BaseRequest.address, stateReg)
+         //   SynthesizePrintf("Generating requests for 0x%x State %d\n", requestQueue.io.deq.bits.BaseRequest.address, stateReg)
         
         }
 
         when (outQueue.io.deq.valid)
         {
-            SynthesizePrintf("Req for config %d, BaseReq %x,\n", outQueue.io.deq.bits.descriptor.config, outQueue.io.deq.bits.BaseReq.address)
+           // SynthesizePrintf("Req for config %d, BaseReq %x,\n", outQueue.io.deq.bits.descriptor.config, outQueue.io.deq.bits.BaseReq.address)
         }
 
 
