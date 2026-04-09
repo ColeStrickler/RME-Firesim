@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = false,
-    maxConfigs : Int = 1,
+    maxConfigs : Int = 8,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
@@ -48,6 +48,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     val device = new SimpleDevice("relmem",Seq("ku-csl,relmem")) with HasReservedAddressRange {
     
     }
+    
+
+
     
     /*
       We need this to reserve an address range in the device tree 
@@ -128,6 +131,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     val config = Wire(RMEConfigPortIO(params))
      // Registers
+
+
+
+        
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
@@ -136,6 +143,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
         val r_EnableRME = RegInit(false.B)
+
+
+        val perfDTU = RegInit(0.U(64.W))
+        val perfNonDTU = RegInit(0.U(64.W))
 
 
 
@@ -168,7 +179,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
        println(s"params.withPerfCounter = ${params.withPerfCounter}")
        //require(params.withPerfCounter, "Performance counters must be enabled for this code to run.")
 
-
+        
         val perfCounters =  if (params.withPerfCounter) {
         
           val stall_fetch_full = Seq((0xf00) -> Seq(RegField(r_FetchFullStall.get.getWidth, r_FetchFullStall.get, RegFieldDesc("FetchFullStall", "FetchFullStall"))))
@@ -223,12 +234,14 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val mmio_EphemeralRegionConfig_PhysStart = r_EphemeralRegionConfig_PhysStart.zipWithIndex.map {case (reg, i) => 
           (i * 0x8 + 2*params.maxConfigs*0x8 + 0x400) -> Seq(RegField(reg.getWidth, reg, RegFieldDesc(s"r_EphemeralRegionConfig_PhysStart${i}", "r_EphemeralRegionConfig_PhysStart")))    
       }
-
+      val dtu_access_reg = Seq((0xf00) -> Seq(RegField(perfDTU.getWidth, perfDTU, RegFieldDesc("perfDTU", "perfDTU"))))
+      val nondtu_access_reg = Seq((0xf08) -> Seq(RegField(perfNonDTU.getWidth, perfNonDTU, RegFieldDesc("perfNonDTUl", "perfNonDTU"))))
+          
 
      
       val mmreg = mmio_Enable ++ mmio_RowSize ++ mmio_RowCount ++ mmio_EnabledColumnCount ++ 
                   mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters ++
-                  mmio_EphemeralConfigStart ++ mmio_EphemeralConfigSize ++ mmio_EphemeralRegionConfig_PhysStart
+                  mmio_EphemeralConfigStart ++ mmio_EphemeralConfigSize ++ mmio_EphemeralRegionConfig_PhysStart ++ dtu_access_reg ++ nondtu_access_reg
       val regmap = ctlnode.regmap(mmreg: _*)
 
       config.RowSize := r_RowSize
@@ -421,6 +434,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //{
       //  SynthesizePrintf("dram resp %d\n", in.d.bits.source)
       //}
+
+
+      perfDTU := perfDTU + fetch_units.map(fu => fu.OutReq.fire.asUInt).reduce(_ + _)
+      perfNonDTU := perfNonDTU + in.a.fire
 
 
       // Either from trapper or directly from DRAM if not an rme request

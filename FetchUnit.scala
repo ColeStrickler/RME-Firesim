@@ -118,13 +118,14 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         */
         // Store Current Request in a register to keep its state, pass beating request out in Wire
         // we may not need to store this in a register here -->?
+        val zero_req =  io.Requestor.bits.descriptor.zero && io.Requestor.fire
         val hasActiveRequest = RegInit(false.B)
         val currentlyBeating = RegInit(false.B)
         val currentRequest = Reg(new TLBundleA(tlOutParams))
         val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
         //val currentBaseAddr = RegInit(0.U(64.W))
         val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
-        currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire)
+        currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire && !zero_req)
         currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
         beatingRequest.bits := currentRequest
         beatingRequest.bits.source := srcID
@@ -166,6 +167,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
+        when (zero_req)
+        {
+            dataReg := 0.U
+        }
+
         when (io.inReply.fire)
         {
           //  SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
@@ -181,7 +187,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
                     dataReg is not full and we stay false
         */
         //SynthesizePrintf("TLBundleD inReply d_first %d, d_last %d, d_done %d, d_count %d, numbeats %d\n", d_first, d_last, d_done, d_count, tlOutEdge.numBeats1(io.inReply.bits))
-        dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
+        dataRegFull := Mux(d_done || zero_req, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
         io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
         io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
         io.ControlUnit.bits.data := dataReg

@@ -13,7 +13,7 @@ import _root_.subsystem.rme.subsystem.rme.IDAllocator
 import scala.annotation.meta.param
 import os.stat
 import agu.AGUTop
-import agu.AGUParams
+import agu.AGUParams2
 import agu.ShiftDivider
 
 
@@ -32,6 +32,7 @@ case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
     val beatCount = UInt(4.W)
     val config = UInt(4.W)
     val done  = Bool()
+    val zero = Bool()
   //  val ticket = UInt(16.W)
 }
 
@@ -64,6 +65,7 @@ case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
     val offsetAddrFromBase = Decoupled(UInt(bitwidth.W))    // input
     val offset = Flipped(Decoupled(UInt(bitwidth.W)))       // output
     val data_size = Output(UInt(6.W))                       // used by agu
+    val zero = Input(Bool())
 }
 
 
@@ -359,6 +361,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 descriptorOut.beatCount := nBeats
                 descriptorOut.config := config.U
                 descriptorOut.done := done
+                descriptorOut.zero := io.agu.zero
                 //descriptorOut.ticket := currentTicket
                 assert(nBeats > 0.U && nBeats <= 5.U)
 
