@@ -101,7 +101,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
             when (io.FetchUnitPort.fire)
             {
-                SynthesizePrintf("[ControlUnit] Fire in! io.FetchUnitPort.baseReq.address 0x%x, src %d\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.baseReq.source)
+               // SynthesizePrintf("[ControlUnit] Fire in! io.FetchUnitPort.baseReq.address 0x%x, src %d\n", io.FetchUnitPort.bits.baseReq.address, io.FetchUnitPort.bits.baseReq.source)
             }
 
 
