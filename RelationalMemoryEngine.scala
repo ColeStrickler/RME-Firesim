@@ -31,7 +31,7 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = false,
-    maxConfigs : Int = 8,
+    maxConfigs : Int = 1,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
@@ -336,10 +336,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      val fetch_units : Vec[FetchUnitIO] = VecInit(Seq.tabulate(params.nFetchUnits) { j =>
-        val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, i, j))
-        fetch_unit.io
-      })
+      val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, 0,0))
 
 
       val control_unit = Module(new ControlUnitRME(params, out_edge, cachedRegionEdge, i))
@@ -362,10 +359,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       
 
       val dtu_cached_in_a = Wire(Decoupled(new TLBundleA(cachedParams)))
-      when (cachedRegionIn.a.valid)
+      when (cachedRegionIn.a.fire)
       {
-       // SynthesizePrintf("cachedRegionIn.a.valid\n")
+        SynthesizePrintf("cachedRegionIn.a.fire %d\n", cachedRegionIn.a.bits.source)
       }
+      
+      
+      println(s"SourceBits ${cachedRegionIn.a.bits.source.getWidth}")
       dtu_cached_in_a.bits := cachedRegionIn.a.bits
       dtu_cached_in_a.valid := cachedRegionIn.a.valid
       cachedRegionIn.a.ready := dtu_cached_in_a.ready
@@ -380,6 +380,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       trapper.io.Config := config
       trapper.io.TLInA <> dtu_cached_in_a
+
       cachedRegionIn.d <> trapper.io.TLInD
 
 
@@ -413,22 +414,15 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         Fetch Unit broadcast 
       */
       // route back through RME for processing if fetch unit holds same source ID as the reply from DRAM
-      val replySelectorCond = fetch_units.map{ fetch_unit => 
-        val replySelector = fetch_unit.SrcId.valid && (fetch_unit.SrcId.bits === out.d.bits.source)
-        replySelector
-      }
-      replyFromDRAMDemux.io.sel := replySelectorCond.reduce(_ || _) // if any conditions are true, broadcast to fetch units
+      val replySelectorCond = out.d.bits.source >= (outMaxID - params.nFetchUnits).U
+
+      replyFromDRAMDemux.io.sel := replySelectorCond // if any conditions are true, broadcast to fetch units
       replyFromDRAMDemux.io.outB.ready := false.B // default 
-      for (n <- 0 until fetch_units.length)
-      {
-        val fetch_unit = fetch_units(n)
-        fetch_unit.inReply.valid := replySelectorCond(n) && out.d.valid
-        fetch_unit.inReply.bits := replyFromDRAMDemux.io.outB.bits
-        when (replySelectorCond(n)) // when this fetch unit matches src ID, we fed that ready signal to demux
-        {
-          replyFromDRAMDemux.io.outB.ready := fetch_unit.inReply.ready // may need to set a default ready
-        }
-      }
+
+      fetch_unit.io.inReply.valid := replySelectorCond && out.d.valid
+      fetch_unit.io.inReply.bits := replyFromDRAMDemux.io.outB.bits
+      replyFromDRAMDemux.io.outB.ready := fetch_unit.io.inReply.ready
+
 
       //when (out.d.fire)
       //{
@@ -436,7 +430,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //}
 
 
-      perfDTU := perfDTU + fetch_units.map(fu => fu.OutReq.fire.asUInt).reduce(_ + _)
+      perfDTU := perfDTU + fetch_unit.io.OutReq.fire.asUInt
       perfNonDTU := perfNonDTU + in.a.fire
 
 
@@ -445,24 +439,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       in.d <> replyFromDRAMDemux.io.outA
 
       // Outgoing arbiter for passthrough and RME requests
-      val fetch_unit_outbound = fetch_units.map(fetch_unit => fetch_unit.OutReq)
+      val fetch_unit_outbound = Seq(fetch_unit.io.OutReq) //fetch_units.map(fetch_unit => fetch_unit.OutReq)
       TLArbiter.robin(out_edge, out.a, (Seq(in.a) ++ fetch_unit_outbound):_*) // we have to pass as a single Seq i guess
       
-      if (params.withPerfCounter)
-      {
-        val fetchToMemStall = fetch_units.map(fetch_unit => fetch_unit.OutReq.valid).reduce(_||_) && 
-          !fetch_units.map(fetch_unit => fetch_unit.OutReq.fire).reduce(_||_)
-
-        when (fetchToMemStall)
-        {
-          //SynthesizePrintf("fetchToMemStall\n")
-          r_FetchToMemoryStall.foreach{ reg=>
-            reg := reg + 1.U
-          }
-        }
-        
-        
-      }
+     
 
 
       /*
@@ -493,83 +473,18 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         [TRAPPER := CONTROL UNIT]
       */
         trapper.io.ControlUnit <> control_unit.io.TrapperPort
-
-
-
-
-
-
-      if (params.withPerfCounter)
-      {
-       // val ctrlToTrapperStall = control_unit.io.TrapperPort.valid && !control_unit.io.TrapperPort.fire
-       // when (ctrlToTrapperStall)
-       // {
-       //   //SynthesizePrintf("ctrlToTrapperStall\n")
-       //   r_CtrlToTrapperStall.foreach{ reg =>
-       //     reg := reg + 1.U
-       //   }
-       // }
-//
         
-      }
+      
 
       requestors.foreach { req =>
         req.Config := config
       }
 
-      /*
-        FetchUnit(s)/Requestor connection
-      */
 
-      /* 
-        Requestor -> Fetch Unit
-
-        [[Ticket prioritization logic]]
-      */
-      //val reqTicketVec = Wire(Vec(requestors.length, new ReqTicketInfo(requestors.length, 16)))
-      //val reqTickets = requestors.zipWithIndex.map{case (req, i) =>
-      //  (req.FetchUnit.bits.descriptor.ticket, i.U, req.FetchUnit.valid)  
-      //}
-      //reqTicketVec.zipWithIndex.foreach {case (reqT, i) =>
-      //  reqT.ticket := reqTickets(i)._1
-      //  reqT.index :=  reqTickets(i)._2
-      //  reqT.valid := reqTickets(i)._3
-      //}
-
-      def ticketCompare(a: UInt, b: UInt): Bool = {
-        val msbA = a(a.getWidth-1)
-        val msbB = b(b.getWidth-1)
-
-        Mux(msbA === msbB, a < b, msbA > msbB)
-      }
-
-      // basically we want to promote a ticket that is being packed...
-      def srcIsBeingPacked(a: UInt, packingSrc: UInt) : Bool = {
-          a === packingSrc
-      } 
-
-      val reqBeingPackedVec = Wire(Vec(requestors.length, Bool()))
-      val reqBeingPackedExists = Wire(Bool())
-      val reqBPacked = requestors.zipWithIndex.map{case (req, i) =>
-          srcIsBeingPacked(req.FetchUnit.bits.BaseReq.source, control_unit.io.ID) && req.FetchUnit.valid && control_unit.io.useID
-      }
-      reqBeingPackedVec := reqBPacked
-      reqBeingPackedExists := reqBeingPackedVec.reduce(_ || _)
-
-
-      //val minReqTicket = reqTicketVec.reduceTree{ (a, b) => 
-      //  val aBetter =
-      //    a.valid && (
-      //      !b.valid || ticketCompare(a.ticket, b.ticket)
-      //    )
-      //  Mux(aBetter, a, b)
-      //}
       val reqFetchIO = requestors.map(_.FetchUnit)
       val reqdoneIO = requestors.map(_.FetchUnit.bits.descriptor.done)
 
-      val fetchReadyVec = fetch_units.map(fetch_unit => fetch_unit.Requestor.ready)
-      val ohFetchUnitsReady = PriorityEncoderOH(fetchReadyVec)
-      val fetchUnitReady = fetchReadyVec.reduce(_||_) 
+      val fetchUnitReady = fetch_unit.io.Requestor.ready
       
 
       val RequestorActive = RegInit(false.B)
@@ -591,7 +506,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       
       // this should fire to the right one
-
+  
 
 
       /*
@@ -603,121 +518,29 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       reqFetchIO.zipWithIndex.foreach {case (req, i) => 
         req.ready := requestorArb.io.in(i).ready && (!RequestorActive || ActiveRequestor === i.U)
         requestorArb.io.in(i).valid := req.valid && (!RequestorActive || ActiveRequestor === i.U)
-        when (reqBeingPackedVec(i))
-        {
-         // SynthesizePrintf("(CTRLFLOW) %d being packed\n", control_unit.io.ID)
-        }
       }
 
       val selectedRequestor = requestorArb.io.out
       selectedRequestor.ready := fetchUnitReady 
       
       // CAN DEBUG WITH requestorArb.io.chosen
-      for (n <- 0 until fetch_units.length)
-      {
-          val fetch_unit = fetch_units(n)
-          fetch_unit.Requestor.valid := ohFetchUnitsReady(n) && selectedRequestor.valid
-          fetch_unit.Requestor.bits := selectedRequestor.bits
-      }
+
+        fetch_unit.io.Requestor.valid := selectedRequestor.valid
+        fetch_unit.io.Requestor.bits := selectedRequestor.bits
+      
 
 
       val beatWidth = 8
       val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
-      val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
-      when (control_unit.io.useID)
-      {
-          val valids = fetch_unit_ctrl_io.map(fu => fu.bits.baseReq.source === control_unit.io.ID && fu.valid)
-          val selectedIdx = PriorityEncoder(valids.asUInt)
-          control_unit.io.FetchUnitPort.valid := fetch_unit_ctrl_io(selectedIdx).valid
-          control_unit.io.FetchUnitPort.bits  := fetch_unit_ctrl_io(selectedIdx).bits
-          for ((fu, i) <- fetch_unit_ctrl_io.zipWithIndex) {
-            fu.ready := (i.U === selectedIdx) && control_unit.io.FetchUnitPort.ready
-          }
-          //assert(valids.reduce(_ || _), "No fetch unit matches control_unit.io.ID")
-      }
-      .otherwise
-      {
-        
-          val ctrl_unit_arb = Module(new RRArbiter(FetchUnitControlPort(cachedParams, inMaxID, outMaxID, dataRegWidth), params.nFetchUnits))
-          ctrl_unit_arb.io.in <> fetch_unit_ctrl_io
-          control_unit.io.FetchUnitPort <> ctrl_unit_arb.io.out
-      }
+     //val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
 
 
 
-      
+    control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
 
 
 
-      
-      
-      
-      
-      if (params.withPerfCounter)
-      {
-        // /val fetchToCtrlStall = fetch_units.map(fetch_unit => fetch_unit.ControlUnit.valid).reduce(_||_) && !control_unit.io.FetchUnitPort.fire
-// /
-// /
-        // /when (fetchToCtrlStall)
-        // /{
-        // /  //SynthesizePrintf("fetchToCtrlStall\n")
-        // /  r_FetchToCtrlStall.foreach{ reg =>
-        // /    reg :=  reg + 1.U
-        // /  }
-        // /}
-      }
-
-
-
-      //for ((ctrl, i) <- fetch_unit_ctrl_io.zipWithIndex) {
-      //  printf(p"FetchUnit $i: valid=${ctrl.valid}, ready=${ctrl.ready}\n")
-      //}
-      //printf(p"Arbiter Out: valid=${ctrl_unit_arb.io.out.valid}, ready=${ctrl_unit_arb.io.out.ready}\n")
-
-
-
-      //requestors.zipWithIndex.foreach { case (req, i) =>
-      //    req.ControlUnit <> control_unit.io.RequestorPort(i)
-      //}
-    
-
-
-
-
-      
-    
-
-      
-
-
-      //node.in.map{case (e, i) => println("client %s\n", i.params.)}
-    
-
-
-
-      
-
-    
-      
-    
-
-      
-      //SynthesizePrintf("Received address %x\n", in.a.bits.address)
-
-    
-      //when (in.a.fire)
-      //{
-      //  SynthesizePrintf("Address: 0x%x\n", in.a.bits.address)
-      //}
-    
-
-      
-    }
-    
-
-
-  
-
+  }
 }
 
 trait CanHaveRME extends {

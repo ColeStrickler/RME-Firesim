@@ -27,12 +27,10 @@ case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
 {
     val baseID = UInt(log2Ceil(inMaxID).W)
     val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
-    val discardFront = UInt(7.W)
-    val discardBack = UInt(7.W)
-    val beatCount = UInt(4.W)
     val config = UInt(4.W)
     val done  = Bool()
     val zero = Bool()
+    val addr = UInt(33.W)
   //  val ticket = UInt(16.W)
 }
 
@@ -51,12 +49,17 @@ case class RequestorTrapperPort(params : TLBundleParameters, relmemParams : RelM
     val trapperReq = DecoupledIO(TrapperReq(params, relmemParams))
 }
 
+case class ExtractionDescriptor(minDataSize: Int) extends Bundle {
+    val start = UInt(log2Ceil(64/minDataSize).W)
+    val size = UInt(2.W) // hardcode for max of 8 for now
+    val pos = UInt(log2Ceil(64/minDataSize).W)
+}
+
 
 case class RequestorFetchUnitPort(inParams: TLBundleParameters, outParams: TLBundleParameters, inMaxID:Int, outmaxID : Int) extends Bundle
 {
-    val FetchReq = Output(new TLBundleA(outParams))
-    val BaseReq = Output(new TLBundleA(inParams))
     val descriptor = Output(new RequestDescriptor(inMaxID, outmaxID))
+    val extractionDescriptor = Output(new ExtractionDescriptor(4))
 }
 
 case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
@@ -67,6 +70,9 @@ case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
     val data_size = Output(UInt(6.W))                       // used by agu
     val zero = Input(Bool())
 }
+
+
+
 
 
 
@@ -191,17 +197,11 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         //currentTicket := 0.U
 
         io.FetchUnit.valid := false.B // default to false
-        io.FetchUnit.bits.FetchReq := baseRequest // default 
-        io.FetchUnit.bits.BaseReq := baseRequest
         //io.FetchUnit.bits.FetchReq.size := log2Ceil(16).U // size is log2(opsize)
         io.FetchUnit.bits.descriptor.baseID := baseRequest.source
 
          // this will need to be handled differently once we have multiple valuable data in a single cache line
         io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
-        io.FetchUnit.bits.descriptor.discardBack := 0.U
-        io.FetchUnit.bits.descriptor.discardFront := 0.U
-        io.FetchUnit.bits.descriptor.beatCount := 0.U
-        
         readyNextReq := stateReg === idle
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
 
@@ -303,27 +303,25 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val R_i_j = (P_i_j >> 3) * 8.U
 
                 val discard = P_i_j % busWidth
-                val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(6.W))
-
-
-                val sizeTransaction = WireInit(0.U(io.FetchUnit.bits.FetchReq.size.getWidth.W))
-                assert(nBeats < 4.U)
-                when (nBeats === 3.U) {
-                    sizeTransaction := 5.U
-                } .elsewhen (nBeats === 2.U) {
-                    sizeTransaction := 4.U
-                } .otherwise { // 1 bit
-                    sizeTransaction := 3.U
-                }
+               // val nBeats = divideCeil(((discard)(5,0) + io.Config.ColumnWidths(5,0)), 8.U(6.W))
 
 
 
+                val start = P_i_j(5,0)
+                val addr_desc_out = P_i_j - start
 
 
-                val sizeField = sizeTransaction // need to check this, this should usually turn out fine with col size < 16
+                val extract_size = 2.U //io.Config.ColumnWidths --> hardcode for now!
+                val placement = nDescriptorsSent
+
+
+                val sizeField = 6.U //sizeTransaction // need to check this, this should usually turn out fine with col size < 16
                 val discardFront = discard
                 val busAlignment = ((P_i_j + io.Config.ColumnWidths) % busWidth)
-                val discardBack = (R_i_j + (nBeats << 3) - (P_i_j + io.Config.ColumnWidths)) //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
+                
+                
+                
+               // val discardBack = (R_i_j + (nBeats << 3) - (P_i_j + io.Config.ColumnWidths)) //Mux(io.Config.ColumnWidths < 8.U, busWidth - busAlignment, busAlignment)
 
 
 
@@ -356,18 +354,24 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val descriptorOut = Wire(RequestDescriptor(inMaxID, outMaxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.requestPlacement := nDescriptorsSent
-                descriptorOut.discardFront := discardFront
-                descriptorOut.discardBack := discardBack
-                descriptorOut.beatCount := nBeats
                 descriptorOut.config := config.U
                 descriptorOut.done := done
                 descriptorOut.zero := io.agu.zero
-                //descriptorOut.ticket := currentTicket
-                assert(nBeats > 0.U && nBeats <= 5.U)
+                descriptorOut.addr := addr_desc_out + backingEphemeralRegionStart
+                val extractionDescriptorOut = Wire(ExtractionDescriptor(4))
+                extractionDescriptorOut.start := start 
+                extractionDescriptorOut.pos := placement
+                extractionDescriptorOut.size := extract_size 
 
-                outQueue.io.enq.bits.FetchReq := sendRequest.bits
+
+
+
+                //descriptorOut.ticket := currentTicket
+               // assert(nBeats > 0.U && nBeats <= 5.U)
+
                 outQueue.io.enq.bits.descriptor := descriptorOut
-                outQueue.io.enq.bits.BaseReq := baseRequest
+                outQueue.io.enq.bits.extractionDescriptor := extractionDescriptorOut
+
                 //outQueue.io.enq.valid :=  sendRequest.valid && id_allocator.io.newID.fire && io.agu.offset.fire
                 //io.agu.offset.ready := sendRequest.valid && id_allocator.io.newID.valid && outQueue.io.enq.ready
                 outQueue.io.enq.valid :=  sendRequest.valid && io.agu.offset.fire
@@ -375,7 +379,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
                 when (io.agu.offset.fire)
                 {
-                    SynthesizePrintf("AGU.fire 0x%x srcAddr=0x%x config %d\n", io.agu.offset.bits, baseRequest.address, config.U)
+                    SynthesizePrintf("AGU.fire 0x%x src %d --> fetchAddr 0x%x srcAddr=0x%x config %d\n", io.agu.offset.bits, descriptorOut.baseID, descriptorOut.addr, baseRequest.address, config.U)
                 }
 
                 when (outQueue.io.enq.fire)

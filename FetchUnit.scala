@@ -12,11 +12,19 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, outMaxID : Int, dataRegWidth: Int) extends Bundle
+
+case class RequestTableEntry(inMaxID : Int, outMaxID : Int, nExtractDesc : Int) extends Bundle
 {
-    val data = Output(UInt(dataRegWidth.W)) // 64 bytes = 1 cache line
-    val baseReq = Output(new TLBundleA(tlParams))
-    val descriptor = Output(new RequestDescriptor(inMaxID, outMaxID))
+    val descriptor = new RequestDescriptor(inMaxID, outMaxID)
+    val extractionDescriptors = Vec(nExtractDesc, new ExtractionDescriptor(4))
+    val activeDesc = UInt(log2Ceil(nExtractDesc+1).W)
+}
+
+
+case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, outMaxID : Int, dataRegWidth: Int, nExtractDesc: Int = 16) extends Bundle
+{
+    val data = Output(UInt(512.W)) // 64 bytes = 1 cache line
+    val reqTableEntry = Output(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
 }
 
 
@@ -38,9 +46,6 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
         // DRAM Port
         val OutReq = Decoupled(new TLBundleA(tlOutParams)) // send outbound memory requests to DRAM
         val inReply = Flipped(Decoupled(new TLBundleD(tlOutParams))) // receive inbound data from DRAM
-        val SrcId = Valid(UInt(tlOutParams.sourceBits.W)) // use to route incoming requests back to here
-        
-        
         // Control Unit Port
         val ControlUnit = Decoupled(FetchUnitControlPort(tlInParams, inMaxID, outMaxID, dataRegWidth))
 
@@ -48,157 +53,257 @@ case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundlePara
 
 
 
-/* 
-    I think we can have several of these, and overlap their latency
 
-
-
-    We will also need the incoming requests back to the RME somehow, otherwise we may get a reply that is meant for normal memory
-    
-*/
 
 class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdge: TLEdgeIn, instance: Int, subInstance: Int)(
     implicit p: Parameters) extends Module {
 
-    val (out, tlOutEdge) = adapter.out(0)
-    val (in, tlInEdge) = adapter.in(0)
-    val tlOutA = out.a
-    val tlOutD = out.d
-    val tlOutParams = tlOutEdge.bundle
-    val tlInParams = cachedRegionEdge.bundle
-    val inMaxID = (math.pow(2, tlInEdge.bundle.sourceBits)-1).toInt
-    val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
-    val beatWidth = 8
-    val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
-    val srcID = (outMaxID - subInstance).U
-    println(s"inMaxID $inMaxID outMaxID $outMaxID using SrCID ${outMaxID - subInstance}")
-    println(s"dataRegWidth $dataRegWidth")
-    val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
-
-        
+        val (out, tlOutEdge) = adapter.out(0)
+        val (in, tlInEdge) = adapter.in(0)
+        val tlOutA = out.a
+        val tlOutD = out.d
+        val tlOutParams = tlOutEdge.bundle
+        val tlInParams = cachedRegionEdge.bundle
+        val inMaxID = (math.pow(2, cachedRegionEdge.bundle.sourceBits)-1).toInt
+        val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+        val beatWidth = 8
+        val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
+        val srcID = (outMaxID - subInstance).U
+        println(s"inMaxID $inMaxID outMaxID $outMaxID using SrCID ${outMaxID - subInstance}")
+        println(s"dataRegWidth $dataRegWidth")
+        val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
 
 
-        //assert(io.Requestor.bits.FetchReq.size <= params.maxDataSize.U)
-        val fetchReq = Reg(new TLBundleA(tlOutParams))
-        val baseReq = Reg(new TLBundleA(tlInParams))
-        val descriptor = Reg(new RequestDescriptor(inMaxID, outMaxID))
-        fetchReq := Mux( io.Requestor.fire, io.Requestor.bits.FetchReq, fetchReq)
-        baseReq :=  Mux( io.Requestor.fire, io.Requestor.bits.BaseReq, baseReq)
-        //baseReq := Mux(io.Requestor.bits.isBaseRequest && io.Requestor.fire, io.Requestor.bits.FetchReq, baseReq)
-        descriptor := Mux(io.Requestor.fire, io.Requestor.bits.descriptor, descriptor)
-         println("fetch unit basereq.source.width %d", io.ControlUnit.bits.baseReq.source.getWidth)
+        io.OutReq.valid := false.B
+        io.OutReq.bits := 0.U.asTypeOf(new TLBundleA(tlOutParams))
+
+        // Maximum coalescable requests
+        val nExtractDesc = 16
+        val FREE_REQ_ENTRY = nExtractDesc+1
+
+
+        // Request Table Init //
+        val emptyEntry = Wire(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
+        emptyEntry.descriptor := 0.U.asTypeOf(RequestDescriptor(inMaxID, outMaxID))
+        emptyEntry.extractionDescriptors := VecInit(Seq.fill(nExtractDesc) 
+        { // extractionDescriptors init (each element must be initialized)
+            val ed = Wire(new ExtractionDescriptor(4))
+            ed.start := 0.U
+            ed.size  := 0.U
+            ed.pos   := 0.U
+            ed
+        })
+        emptyEntry.activeDesc := FREE_REQ_ENTRY.U
+                // Request Table Init //
+
+
+
+
+        /*
+            DATA REGISTERS
+        */
+        val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
+        val receivingEntry = RegInit(0.U(log2Ceil(nExtractDesc).W))
+        val dataRegFull = RegInit(false.B)
+        val dataRegActive = RegInit(false.B)
+        /*
+            DATA REGISTERS
+        */
+
+
+        /*
+            Store information on outbound requests here
+        */
+        val requestTable = RegInit(VecInit(Seq.fill(params.nFetchUnits)(emptyEntry)))
+        // HELPER FUNCTIONS 
+
+
+        def ResetEntry(entry: UInt) : Unit = {
+            requestTable(entry) := emptyEntry
+        }
+
+
+        def GetCoalesceEntry(coalesceVec: Vec[Bool]) : UInt = {
+            PriorityEncoder(coalesceVec)
+        }
+
+        def GetCoalesceVec(incomingDesc: RequestDescriptor) : Vec[Bool] = {
+            VecInit(requestTable.zipWithIndex.map{ case (entry,i) =>
+                when(entry.descriptor.addr === incomingDesc.addr && io.Requestor.fire) {
+                    SynthesizePrintf("Addr Match descCond %d, idmath %d, retLock %d\n", (entry.activeDesc < nExtractDesc.U), (entry.descriptor.baseID === incomingDesc.baseID), (receivingEntry === i.U && !dataRegFull))
+                }
+                (entry.descriptor.addr === incomingDesc.addr) && (entry.activeDesc < nExtractDesc.U) && (entry.descriptor.baseID === incomingDesc.baseID)
+            })
+        }
+
+        def CanCoalesce(coalesceVec: Vec[Bool]): Bool = {
+            VecInit(coalesceVec.zipWithIndex.map { case (b, i) =>
+                b && !(receivingEntry === i.U && dataRegFull)
+            }).reduce(_ || _)
+        }       
+
+        val availableEntryVec = VecInit(requestTable.map{ entry =>
+            entry.activeDesc === FREE_REQ_ENTRY.U
+        })
+
+
+        def HasAvailableEntries() : Bool = {
+            availableEntryVec.reduce(_ || _)
+        }
+
+        def AvailableEntries() : Vec[Bool] = { // only use once to avoid duplicating comparator logic
+            availableEntryVec
+        }
+
+        def FirstAvailableEntry() : UInt = {
+            PriorityEncoder(AvailableEntries())
+        }
+
+
+        def AllocateEntry(entry: UInt, reqPort: RequestorFetchUnitPort) : Unit = {
+            val reqTableEntry = Wire(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
+            reqTableEntry := 0.U.asTypeOf(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
+            reqTableEntry.descriptor := reqPort.descriptor
+            reqTableEntry.extractionDescriptors(0) := reqPort.extractionDescriptor
+            reqTableEntry.activeDesc := 1.U
+
+            requestTable(entry) := reqTableEntry
+        }
+
+
+        def CoalesceEntry(entry: UInt, extractionDescript: ExtractionDescriptor) : Unit = {
+            val active_desc = requestTable(entry).activeDesc
+            requestTable(entry).activeDesc := active_desc + 1.U
+            requestTable(entry).extractionDescriptors(active_desc) := extractionDescript
+        }
+
+
+        def DescriptorToOutReq(desc : RequestDescriptor, src: UInt) : TLBundleA = {
+            val ret = Wire(new TLBundleA(tlOutParams))
+            ret.opcode := TLMessages.Get
+            ret.param := 0.U
+            ret.size := 6.U
+            ret.source := src
+            ret.address := desc.addr
+            ret.data := 0.U
+            ret.mask := Fill(ret.mask.getWidth, 1.U(1.W)) // all valid
+            ret.corrupt := false.B
+            // safest defaults for structured fields
+            ret.user := 0.U.asTypeOf(ret.user)
+            ret.echo := 0.U.asTypeOf(ret.echo)
+            ret
+        }
+
+
+
+        /*
+            When we have an incoming request we have 3 options:
+            1.  Zero flag is set, we can immediately forward the value itself to the ControlUnit.
+                Still must allocate entry in RequestTable for easy arbitration.
+
+            2. Cannot coalesce entry. So allocate new entry in request table.
+
+            3. Can coalesce entry, so we add an extraction descriptor to the already existing entry
+               We need to ensure that if this happens on same cycle as that data is being removed, it is handled properly
+        */
+
+
+        val hasOutReqToSend = RegInit(false.B)
+        val outReqEntryToSend = RegInit(0.U(log2Ceil(nExtractDesc)))
+
+        val entry = FirstAvailableEntry()
+        val cvec = GetCoalesceVec(io.Requestor.bits.descriptor)
+        val can_coalesce = CanCoalesce(cvec)
+        val coalesce_entry = GetCoalesceEntry(cvec)
 
         when (io.Requestor.fire)
         {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> received from Requestor BaseReq.src=%d\n", instance.U, subInstance.U, io.Requestor.bits.BaseReq.source)
+            hasOutReqToSend := false.B
+            io.OutReq.valid := false.B
+            when (!can_coalesce)
+            {
+                SynthesizePrintf("No Coalesce 0x%x\n", io.Requestor.bits.descriptor.addr)
+                AllocateEntry(entry, io.Requestor.bits)
+                hasOutReqToSend := !io.OutReq.fire
+                io.OutReq.valid := true.B
+            }
+            .otherwise {
+                SynthesizePrintf("Coalesce Entry! 0x%x\n", io.Requestor.bits.descriptor.addr)
+                CoalesceEntry(coalesce_entry, io.Requestor.bits.extractionDescriptor)
+            }
+            
+            /* 
+                We try to just pass the request throught,
+                but if we can't we will try again the next cycle
+
+                For now, when hasOutReqToSend is true, we will not take in another request
+                ---> this will simplify things greatly
+            */
+            
+
+            outReqEntryToSend := entry
+            val src = outMaxID.U-entry
+            io.OutReq.bits := DescriptorToOutReq(io.Requestor.bits.descriptor, src)
         }
 
-        when(io.OutReq.fire)
+
+        when (hasOutReqToSend)
         {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> fired request to DRAM src: %d baseReq 0x%x address 0x%x\n", instance.U, subInstance.U, io.OutReq.bits.source, baseReq.address, fetchReq.address)
+            val outReq = Wire(Decoupled(new TLBundleA(tlOutParams)))
+            outReq.valid := true.B
+
+            val src = outMaxID.U-outReqEntryToSend
+            outReq.bits := DescriptorToOutReq(requestTable(outReqEntryToSend).descriptor, src)
+            io.OutReq <> outReq
+            val (a_first, a_last, a_done) = tlOutEdge.firstlast(outReq)
+            hasOutReqToSend := !(a_last && io.OutReq.fire)
         }
+        io.Requestor.ready := HasAvailableEntries() || can_coalesce
 
-        when (io.inReply.fire)
-        {
-           // SynthesizePrintf("[FetchUnit_%d_%d] ==> received reply DRAM 0x%x\n", instance.U, subInstance.U, io.inReply.bits.data)
-        }
-
-
-        when (io.ControlUnit.fire)
-        {
-            //SynthesizePrintf("[FetchUnit_%d_%d] ==> sent line to control unit BaseAddress 0x%x, 0x%x\n", instance.U, subInstance.U, baseReq.address, fetchReq.address)
-        }
-
-
-        /*
-
-            [ DRAM OUTBOUND ]
-            Handle outbound requests to DRAM
-
-        */
-        // Store Current Request in a register to keep its state, pass beating request out in Wire
-        // we may not need to store this in a register here -->?
-        val zero_req =  io.Requestor.bits.descriptor.zero && io.Requestor.fire
-        val hasActiveRequest = RegInit(false.B)
-        val currentlyBeating = RegInit(false.B)
-        val currentRequest = Reg(new TLBundleA(tlOutParams))
-        val beatingRequest = Wire(Decoupled(new TLBundleA(tlOutParams)))
-        //val currentBaseAddr = RegInit(0.U(64.W))
-        val (a_first, a_last, a_done) = tlOutEdge.firstlast(beatingRequest)
-        currentlyBeating := Mux(currentlyBeating, !a_done, io.Requestor.fire && !zero_req)
-        currentRequest := Mux(io.Requestor.fire, io.Requestor.bits.FetchReq, currentRequest)
-        beatingRequest.bits := currentRequest
-        beatingRequest.bits.source := srcID
-        beatingRequest.valid := currentlyBeating
-        io.Requestor.ready := !currentlyBeating && !hasActiveRequest
-
-        io.OutReq <> beatingRequest
-        //SynthesizePrintf("[FetchUnit_%d_%d] ==> has active request %d, currentlyBeating %Ad, io.OutReq.ready %d\n", instance.U, subInstance.U, hasActiveRequest, currentlyBeating, io.OutReq.ready)
         
-        /*
+        when (io.OutReq.fire) {
+            SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x\n", io.OutReq.bits.address)
+        }
 
-            [ DRAM INBOUND ]
-            Handle Inbound replies from DRAM
-
-        */
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
-
-        
-        /*
-            We do not need to store an entire cache line here
-
-            We can cut this down to 16-24 bytes
-        */
-
-        val dataReg = RegInit(0.U(dataRegWidth.W)) // store a single cache line we get from DRAM
+        io.inReply.ready := false.B
 
 
+        when (io.inReply.valid) {
+            io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
+        }
+
+        when (io.inReply.fire) {
+            receivingEntry  := outMaxID.U - io.inReply.bits.source
+        }
 
 
+    
 
-        val dataRegFull = RegInit(false.B)
-        val receivedAllData = RegInit(true.B)
-        val corrupt = RegInit(false.B)
 
-        io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
         // shift in new data
         val dataWidth = io.inReply.bits.data.getWidth
         val shiftNewData = io.inReply.bits.data //+ d_count // count is to test
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
-        when (zero_req)
-        {
-            dataReg := 0.U
-        }
+        dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
 
-        when (io.inReply.fire)
-        {
-          //  SynthesizePrintf("dataReg 0x%x, io.inReply.bits.data 0x%x\n", dataReg, io.inReply.bits.data)
-        }
 
-        /*
-            if (done receiving data)
-                dataRegFull = true
-            else
-                if (data reg is already full)
-                    if we write data to SPM dataRegFull = false
-                else
-                    dataReg is not full and we stay false
-        */
-        //SynthesizePrintf("TLBundleD inReply d_first %d, d_last %d, d_done %d, d_count %d, numbeats %d\n", d_first, d_last, d_done, d_count, tlOutEdge.numBeats1(io.inReply.bits))
-        dataRegFull := Mux(d_done || zero_req, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
-        io.ControlUnit.valid := dataRegFull // we can write valid data to SPM after receiving entire cache line
-        io.ControlUnit.bits.baseReq := baseReq // will be used to formulate reply
+       // receivingEntry := (outMaxID.U - io.inReply.bits.source)
+
+        io.ControlUnit.valid := dataRegFull  // we can write valid data to SPM after receiving entire cache line
+        io.ControlUnit.bits.reqTableEntry := requestTable(receivingEntry)
         io.ControlUnit.bits.data := dataReg
-        io.ControlUnit.bits.descriptor := descriptor
-        when (dataRegFull)
+
+
+        
+
+
+        when (io.ControlUnit.fire)
         {
-          //  SynthesizePrintf("[FetchUnit_%d_%d] ==>dataReg 0x%x\n", instance.U, subInstance.U, dataReg)
+            ResetEntry(receivingEntry)
+            SynthesizePrintf("ToControlUnit: BaseReqSrc %d\n", requestTable(receivingEntry).descriptor.baseID)
         }
-  
-        // we no longer have an active request when we send it to control unit
-        hasActiveRequest := Mux(hasActiveRequest, !io.ControlUnit.fire, io.Requestor.fire) // This is mapped the the io.SrcId.valid, was causing issues in routing the inbound requests
-        io.SrcId.bits := srcID
-        io.SrcId.valid := hasActiveRequest
+
 }

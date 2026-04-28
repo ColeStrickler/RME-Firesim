@@ -14,19 +14,21 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 
 
 
-case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int, dataRegWidth : Int) extends Bundle {
-    val CacheLineIn = Flipped(DecoupledIO(UInt(dataRegWidth.W))) // take in an entire cache line
-    val DescriptorIn = Input(RequestDescriptor(inMaxID, outmaxID))
+case class CtrlUnitColExtractorIO(inMaxID: Int, outMaxID: Int, nExtractionDesc : Int = 16) extends Bundle {
+    val data = UInt(512.W) // take in an entire cache line
+    val position = UInt(log2Ceil(64).W)
+    val extractionDescriptors = Vec(nExtractionDesc, new ExtractionDescriptor(4))
+    val nDesc = UInt(log2Ceil(nExtractionDesc+1).W)
+    val descriptorIn = new RequestDescriptor(inMaxID, outMaxID)
+}
+
+
+case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int, dataRegWidth : Int, nExtractionDesc: Int = 16, minDataSize: Int = 4) extends Bundle {
+
+    //val DescriptorIn = Input(RequestDescriptor(inMaxID, outmaxID))
    // val DataSizeOut = Output(UInt(7.W)) // size in bytes
-    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth))
-    //val Data64Out = DecoupledIO(UInt(64.W))
-    //val Data32Out = DecoupledIO(UInt(32.W))
-    //val Data16Out = DecoupledIO(UInt(16.W))
-    //val Data8Out = DecoupledIO(UInt(8.W))
-    //val Data4Out = DecoupledIO(UInt(4.W))
-    //val Data2Out = DecoupledIO(UInt(2.W))
-    //val Data1Out = DecoupledIO(UInt(8.W))
-    //val ConfigIn = Input(RMEConfigPortIO()) // do we want to store this so we do not change mid extract?
+    val CtrlUnit = Flipped(DecoupledIO(new CtrlUnitColExtractorIO(inMaxID, outmaxID)))
+    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, minDataSize))
 
     
 }
@@ -34,7 +36,7 @@ case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int, dataRegWidth : Int) ex
 
 
 
-class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int) extends Module {
+class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtractionDesc: Int = 16) extends Module {
     /*
         We will shift in a cache line and extract the needed parts 
     */
@@ -43,84 +45,64 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int) exten
     val beatWidth = 8
     val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
 
-    val io = IO(ColumnExtractorIO(inMaxID, outmaxID, dataRegWidth))
 
-    val tmpLine = RegInit(0.U(dataRegWidth.W))
-    val tmpDescriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
+
+    val io = IO(new ColumnExtractorIO(inMaxID, outmaxID, dataRegWidth))
+    io.Packer.valid := false.B
+    io.Packer.bits := 0.U.asTypeOf(new PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, 4))
+
+    val tmpLine = RegInit(0.U(512.W))
+    //val tmpDescriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
     val tmpWire = WireInit(0.U(dataRegWidth.W))
     val hasValidLine = RegInit(false.B)
+    val descriptors = RegInit(
+    VecInit(Seq.fill(nExtractionDesc)(
+        0.U.asTypeOf(new ExtractionDescriptor(4))
+    ))
+)
+    val descriptorCount = RegInit(0.U(log2Ceil(nExtractionDesc+1).W))
+    val descriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
 
-    /*
-        Every cycle, we will compute the offset of the selected data and then shift it into the PackedBytesReg
+    tmpLine := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.data, tmpLine)
+    descriptors := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.extractionDescriptors, descriptors)
+    descriptorCount := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.nDesc, Mux(io.Packer.fire, descriptorCount-1.U, descriptorCount))
+    io.CtrlUnit.ready := descriptorCount === 0.U
+    descriptor := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.descriptorIn, descriptor)
 
-
-        we can probably just iterate over the config, and calculate offsets
-
-    */
     
-    /*
-        To test in the begginning we are just going to take the first 4 bytes from each line
-    */
-    tmpWire := tmpLine
-    //when (io.CacheLineIn.fire)
-    //{
-    //    SynthesizePrintf("[ColumnExtractor] --> received cache line in\n")
-    //}
-
-
-    io.CacheLineIn.ready := !hasValidLine
-    tmpLine := Mux(io.CacheLineIn.fire, io.CacheLineIn.bits, tmpLine)
-    tmpDescriptor := Mux(io.CacheLineIn.fire, io.DescriptorIn, tmpDescriptor)
-    
-
-
-    /*
-        Next state
-    */
-    //val ReadyNewLine = NumPackedBytes >= 64.U
-
-    /*
-        We will change this logic
-    */
-    //hasValidLine := Mux(hasValidLine, !io.Packer.fire || io.CacheLineIn.fire, io.CacheLineIn.fire)
-    hasValidLine := io.CacheLineIn.fire
-    when (io.CacheLineIn.fire)
-    {
-        //SynthesizePrintf("[ColumnExtractor] --> cache line in 0x%x\n", io.CacheLineIn.bits)
+    def ActiveDescriptor() : ExtractionDescriptor = {
+        descriptors(descriptorCount-1.U)
     }
 
-    
-
-    
-
-
-
-    val tmpWire2 = WireInit(0.U(dataRegWidth.W))
-    val tmpWire3 = WireInit(0.U(dataRegWidth.W))
-    //io.DataSizeOut := 16.U
-    val TotalSize = (tmpDescriptor.beatCount*8.U) // (8bytes/beat)
-    val DataSize = TotalSize - (tmpDescriptor.discardFront) - (tmpDescriptor.discardBack)
-    val StartIndex = tmpDescriptor.discardFront*8.U // convert bytes to bits
-    val EndIndex = (TotalSize*8.U) - (tmpDescriptor.discardBack*8.U) // convert bytes to bits
-    val ShiftAmount = dataRegWidth.U - TotalSize*8.U // convert to bits
-    tmpWire2 := (tmpWire >> ShiftAmount)
-    val ExtractedData = (tmpWire2 >> StartIndex) & ((1.U << (EndIndex - StartIndex)) - 1.U)
-    // Compute how much to shift left for alignment
-    val AlignShift = dataRegWidth.U - (EndIndex - StartIndex)
-    // Left-align the extracted data
-    val OutputData = ExtractedData << AlignShift
-
-    when (io.Packer.fire)
-    {
-        //SynthesizePrintf("[COLUMN EXTRACTOR] DataSize: %d, front %d, back %d\n", DataSize, tmpDescriptor.discardFront, tmpDescriptor.discardBack)
-       // SynthesizePrintf("[COLUMN EXTRACTOR] tmpWire2: 0x%x\n", tmpWire2)
-       // SynthesizePrintf("[COLUMN EXTRACTOR] ExtractedData: 0x%x\n", ExtractedData)
-        //SynthesizePrintf("[COLUMN EXTRACTOR] OutputData: 0x%x\n", OutputData)
+    when (io.CtrlUnit.fire) {
+       // SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID)
     }
 
-    // send in correct number bits to packer
-    io.Packer.bits.dataIn := OutputData//Cat(tmpWire((16*8)-1, 0), 0.U((512-(16*8)).W))
-    io.Packer.bits.dataSize := DataSize//(io.DescriptorIn.beatCount*8.U) - io.DescriptorIn.discardFront - io.DescriptorIn.discardBack
-    io.Packer.valid := hasValidLine
-    io.Packer.bits.descriptorIn := tmpDescriptor
+
+    when (descriptorCount > 0.U) {
+        SynthesizePrintf("DescriptorCount %d\n", descriptorCount)
+        io.Packer.valid := true.B
+        val desc = ActiveDescriptor()
+
+        tmpLine
+        val result = Wire(UInt(64.W)) // max = 8 bytes
+        result := 0.U
+
+        val byteOffset = desc.start
+        val dataSize = desc.size
+
+        val shifted = tmpLine >> (byteOffset << 3)
+        switch(dataSize) {
+            is(0.U) { result := shifted(7, 0) }      // 1 byte
+            is(1.U) { result := shifted(15, 0) }     // 2 bytes
+            is(2.U) { result := shifted(31, 0) }     // 4 bytes
+            is(3.U) { result := shifted(63, 0) }     // 8 bytes
+        }
+
+        io.Packer.bits.dataSize := desc.size
+        io.Packer.bits.dataIn := result
+        io.Packer.valid := true.B
+        io.Packer.bits.placement := desc.pos
+        io.Packer.bits.descriptorIn  := descriptor
+    }
 }

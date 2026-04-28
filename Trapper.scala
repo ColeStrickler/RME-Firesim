@@ -25,14 +25,16 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut, tlInBundle: TLBundle, instance: Int)(
     implicit p: Parameters) extends Module {
     val tlInParams = tlInEdge.bundle
-
+    val tlOutParams = tlOutEdge.bundle
+    val outMaxID = (math.pow(2, tlOutParams.sourceBits)-1).toInt
+    val inMaxID = (math.pow(2, tlInParams.sourceBits)-1).toInt
 
     def ToRME(addr : UInt) : Bool = {
         val torme : Bool = addr >= params.rmeaddress.U &&  addr <= (params.rmeaddress.U + 0xfff.U)
         torme
     }
 
-        def CheckConfigHit(addr: UInt) : UInt = {
+    def CheckConfigHit(addr: UInt) : UInt = {
             //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
             val hits = (0 until params.maxConfigs).map { i =>
             val start = io.Config.EphemeralRegionConfig_PhysStart(i)
@@ -55,6 +57,26 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     }
 
 
+    def DescriptorToOutReq(src: UInt) : TLBundleA = {
+        val ret = Wire(new TLBundleA(tlInParams))
+        ret.opcode := TLMessages.Get
+        ret.param := 0.U
+        ret.size := 6.U
+        ret.source := src
+        ret.address := 0.U
+        ret.data := 0.U
+        ret.mask := Fill(ret.mask.getWidth, 1.U(1.W)) // all valid
+        ret.corrupt := false.B
+        // safest defaults for structured fields
+        ret.user := 0.U.asTypeOf(ret.user)
+        ret.echo := 0.U.asTypeOf(ret.echo)
+        ret
+    }
+
+
+
+
+
    // val tlInBeats = tlInEdge.numBeats(tlInBundle.a.bits)
     val io = IO(new Bundle {
         val TLInA = Flipped(DecoupledIO(new TLBundleA(tlInParams)))
@@ -64,15 +86,15 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
 
         val Requestor = new RequestorTrapperPort(tlInParams, params)
-        val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams)))
+        val ControlUnit = Flipped(DecoupledIO(ControlUnitTrapperPort(tlInParams, inMaxID)))
 
     }).suggestName(s"trapper_$instance")
-    
-    
+    println(s"SourceBits ${io.TLInA.bits.source.getWidth}")    
+        
     val ticket_dispenser = RegInit(0.U(16.W))
     ticket_dispenser := Mux(io.TLInA.fire, ticket_dispenser + 1.U, ticket_dispenser)
 
-
+    
 
 
     
@@ -147,13 +169,13 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         currentDataWire := replyCacheLine(DataWidth-1, 0) // get data
         replyCacheLine := Mux(io.ControlUnit.fire, io.ControlUnit.bits.cacheLine, Mux(io.TLInD.fire, replyCacheLine >> DataWidth, replyCacheLine))
         
-        replyToBaseReq := Mux(io.ControlUnit.fire, io.ControlUnit.bits.baseReq, replyToBaseReq)
+        replyToBaseReq := Mux(io.ControlUnit.fire, DescriptorToOutReq(io.ControlUnit.bits.baseReqSource), replyToBaseReq)
         io.ControlUnit.ready := !currentlyBeating
 
 
         when (io.ControlUnit.fire)
         {
-           // SynthesizePrintf("[TRAPPER] --> cache line from control unit. baseReq address: 0x%x\n", io.ControlUnit.bits.baseReq.address)
+            SynthesizePrintf("[TRAPPER] --> cache line from control unit. \n")
         }
 
         currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)
@@ -164,11 +186,16 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         baseReqUpdated := replyToBaseReq
         baseReqUpdated.size := 6.U
         
-
+      
         toSend := Mux(io.ControlUnit.fire, tlInEdge.AccessAck(replyToBaseReq, currentDataWire), toSend)
 
         currentRequest.bits := tlInEdge.AccessAck(replyToBaseReq, currentDataWire)
         currentRequest.valid := currentlyBeating
+
+
+        when (io.TLInA.fire) {
+            SynthesizePrintf("[TRAPPER] --> io.TLInA.fire\n")
+        }
         
         when (io.ControlUnit.fire)
         {
@@ -177,8 +204,8 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
         when (io.TLInD.fire)
         {
-            //SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
-          //  SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
+            SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
+            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
         }
         
         io.TLInD <> currentRequest
