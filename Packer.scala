@@ -16,7 +16,7 @@ import freechips.rocketchip.diplomacy.BufferParams.flow
 case class PackerColExtractIO(inMaxID:Int, outmaxID : Int, dataRegWidth: Int, minDataSize: Int) extends Bundle {
     val dataIn = Output(UInt(dataRegWidth.W))
     val dataSize = Output(UInt(2.W))
-    val placement = Output(UInt(log2Ceil(minDataSize).W))
+    val placement = Output(UInt(log2Ceil(64).W))
     val descriptorIn = Output(RequestDescriptor(inMaxID, outmaxID))
 }
 
@@ -46,49 +46,40 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
     val writeBytes = Wire(Vec(8, UInt(8.W))) // max 8 bytes
 
     for (i <- 0 until 8) {
-        writeBytes(i) := io.ColExtractor.bits.dataIn(
-            dataRegWidth-1 - (i*8),
-            dataRegWidth-8 - (i*8)
-        )
+        writeBytes(i) := io.ColExtractor.bits.dataIn(8*i + 7, 8*i)
     }
 
 
     val DataSize = (1.U << io.ColExtractor.bits.dataSize)
     val packedLineBytes = RegInit(VecInit(Seq.fill(64)(0.U(8.W))))
-    val byteOffset = io.ColExtractor.bits.descriptorIn.requestPlacement * DataSize
+    val byteOffset = io.ColExtractor.bits.placement * DataSize
+
     val NumPackedBytes = RegInit(0.U(7.W))
 
 
-    when (io.ColExtractor.fire) {
-        baseReqSrc := io.ColExtractor.bits.descriptorIn.baseID
+   when (io.ColExtractor.fire) {
+    baseReqSrc := io.ColExtractor.bits.descriptorIn.baseID
 
-        switch(DataSize) {
-            is (1.U) {
-                packedLineBytes(byteOffset) := writeBytes(0)
-                NumPackedBytes := NumPackedBytes + 1.U
-            }
-            is (2.U) {
-                for (i <- 0 until 2) {
-                    packedLineBytes(byteOffset + i.U) := writeBytes(i)
-                }
-                NumPackedBytes := NumPackedBytes + 2.U
-            }
-            is (4.U) {
-                for (i <- 0 until 4) {
-                    packedLineBytes(byteOffset + i.U) := writeBytes(i)
-                }
-                NumPackedBytes := NumPackedBytes + 4.U
-            }
-            is (8.U) {
-                for (i <- 0 until 8) {
-                    packedLineBytes(byteOffset + i.U) := writeBytes(i)
-                }
-                NumPackedBytes := NumPackedBytes + 8.U
-            }
+    SynthesizePrintf(
+      "[PackerDataIn] ByteOffset %d Extracted: %d\n",
+      byteOffset,
+      io.ColExtractor.bits.dataIn
+    )
+
+    for (i <- 0 until 8) {
+        when (i.U < DataSize) {
+            packedLineBytes(byteOffset + i.U) := writeBytes(i)
         }
-
-        SynthesizePrintf("NumPackedBytes %d\n", NumPackedBytes)
     }
+    NumPackedBytes := Mux(io.Trapper.fire, 0.U, Mux(io.ColExtractor.fire, NumPackedBytes + DataSize, NumPackedBytes))
+
+
+    SynthesizePrintf(
+      "[Packer]: NumPackedBytes %d\n[Packer]:Line: 0x%x\n",
+      NumPackedBytes,
+      packedLineBytes.asUInt
+    )
+}
 
 
 
@@ -106,8 +97,5 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
     io.Trapper.bits.PackedLine := packedLineBytes.asUInt
     io.Trapper.bits.BaseReqSrc := baseReqSrc
 
-    when (io.Trapper.fire)
-    {
-        NumPackedBytes := 0.U  
-    }
+
 }

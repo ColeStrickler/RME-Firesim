@@ -103,7 +103,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             DATA REGISTERS
         */
         val dataReg = RegInit(0.U(512.W)) // store a single cache line we get from DRAM
-        val receivingEntry = RegInit(0.U(log2Ceil(nExtractDesc).W))
+        val receivingEntry = RegInit(0.U(log2Ceil(params.nFetchUnits).W))
         val dataRegFull = RegInit(false.B)
         val dataRegActive = RegInit(false.B)
         /*
@@ -222,7 +222,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             io.OutReq.valid := false.B
             when (!can_coalesce)
             {
-                SynthesizePrintf("No Coalesce 0x%x\n", io.Requestor.bits.descriptor.addr)
+                SynthesizePrintf("No Coalesce 0x%x, Allocate entry %d \n", io.Requestor.bits.descriptor.addr, entry)
                 AllocateEntry(entry, io.Requestor.bits)
                 hasOutReqToSend := !io.OutReq.fire
                 io.OutReq.valid := true.B
@@ -258,11 +258,11 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             val (a_first, a_last, a_done) = tlOutEdge.firstlast(outReq)
             hasOutReqToSend := !(a_last && io.OutReq.fire)
         }
-        io.Requestor.ready := HasAvailableEntries() || can_coalesce
+        io.Requestor.ready := (HasAvailableEntries() || can_coalesce) && !hasOutReqToSend
 
         
         when (io.OutReq.fire) {
-            SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x\n", io.OutReq.bits.address)
+            SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
         }
 
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
@@ -274,6 +274,10 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         }
 
         when (io.inReply.fire) {
+            SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull)
+        }
+
+        when (d_first && io.inReply.fire) {
             receivingEntry  := outMaxID.U - io.inReply.bits.source
         }
 
@@ -287,7 +291,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
-        dataRegFull := Mux(d_done, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
+        dataRegFull := Mux(d_last && io.inReply.fire && !dataRegFull, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
 
 
        // receivingEntry := (outMaxID.U - io.inReply.bits.source)
@@ -303,7 +307,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         when (io.ControlUnit.fire)
         {
             ResetEntry(receivingEntry)
-            SynthesizePrintf("ToControlUnit: BaseReqSrc %d\n", requestTable(receivingEntry).descriptor.baseID)
+            SynthesizePrintf("ToControlUnit: receiving entry %d, BaseReqSrc %d\n", receivingEntry, requestTable(receivingEntry).descriptor.baseID)
         }
 
 }

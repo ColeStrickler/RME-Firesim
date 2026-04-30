@@ -75,23 +75,25 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     }
 
     when (io.CtrlUnit.fire) {
-       // SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID)
+         SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d dataIn 0x%x\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID, io.CtrlUnit.bits.data)
     }
 
 
     when (descriptorCount > 0.U) {
-        SynthesizePrintf("DescriptorCount %d\n", descriptorCount)
+
         io.Packer.valid := true.B
         val desc = ActiveDescriptor()
 
-        tmpLine
         val result = Wire(UInt(64.W)) // max = 8 bytes
         result := 0.U
 
-        val byteOffset = desc.start
+        val byteOffset = Wire(UInt(7.W))
+        byteOffset := desc.start
         val dataSize = desc.size
 
         val shifted = tmpLine >> (byteOffset << 3)
+
+        
         switch(dataSize) {
             is(0.U) { result := shifted(7, 0) }      // 1 byte
             is(1.U) { result := shifted(15, 0) }     // 2 bytes
@@ -99,6 +101,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
             is(3.U) { result := shifted(63, 0) }     // 8 bytes
         }
 
+        SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
         io.Packer.bits.dataSize := desc.size
         io.Packer.bits.dataIn := result
         io.Packer.valid := true.B

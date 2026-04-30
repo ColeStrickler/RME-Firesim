@@ -50,7 +50,7 @@ case class RequestorTrapperPort(params : TLBundleParameters, relmemParams : RelM
 }
 
 case class ExtractionDescriptor(minDataSize: Int) extends Bundle {
-    val start = UInt(log2Ceil(64/minDataSize).W)
+    val start = UInt(log2Ceil(64).W)
     val size = UInt(2.W) // hardcode for max of 8 for now
     val pos = UInt(log2Ceil(64/minDataSize).W)
 }
