@@ -133,7 +133,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 4, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=true)) // prevent stalls
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=false)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
