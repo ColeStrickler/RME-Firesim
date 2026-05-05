@@ -18,6 +18,7 @@ case class RequestTableEntry(inMaxID : Int, outMaxID : Int, nExtractDesc : Int) 
     val descriptor = new RequestDescriptor(inMaxID, outMaxID)
     val extractionDescriptors = Vec(nExtractDesc, new ExtractionDescriptor(4))
     val activeDesc = UInt(log2Ceil(nExtractDesc+1).W)
+    val active = Bool()
 }
 
 
@@ -93,7 +94,8 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             ed.pos   := 0.U
             ed
         })
-        emptyEntry.activeDesc := FREE_REQ_ENTRY.U
+        emptyEntry.active := false.B
+        emptyEntry.activeDesc := 0.U
                 // Request Table Init //
 
 
@@ -129,9 +131,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         def GetCoalesceVec(incomingDesc: RequestDescriptor) : Vec[Bool] = {
             VecInit(requestTable.zipWithIndex.map{ case (entry,i) =>
-                when(entry.descriptor.addr === incomingDesc.addr && io.Requestor.fire) {
-                    SynthesizePrintf("Addr Match descCond %d, idmath %d, retLock %d\n", (entry.activeDesc < nExtractDesc.U), (entry.descriptor.baseID === incomingDesc.baseID), (receivingEntry === i.U && !dataRegFull))
-                }
                 (entry.descriptor.addr === incomingDesc.addr) && (entry.activeDesc < nExtractDesc.U) && (entry.descriptor.baseID === incomingDesc.baseID)
             })
         }
@@ -142,8 +141,8 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             }).reduce(_ || _)
         }       
 
-        val availableEntryVec = VecInit(requestTable.map{ entry =>
-            entry.activeDesc === FREE_REQ_ENTRY.U
+        val availableEntryVec = VecInit(requestTable.map{ en =>
+            !en.active
         })
 
 
@@ -166,7 +165,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             reqTableEntry.descriptor := reqPort.descriptor
             reqTableEntry.extractionDescriptors(0) := reqPort.extractionDescriptor
             reqTableEntry.activeDesc := 1.U
-
+            reqTableEntry.active := true.B
             requestTable(entry) := reqTableEntry
         }
 
@@ -209,26 +208,36 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
 
         val hasOutReqToSend = RegInit(false.B)
-        val outReqEntryToSend = RegInit(0.U(log2Ceil(nExtractDesc)))
+        val outReqEntryToSend = RegInit(0.U(log2Ceil(params.nFetchUnits).W))
 
-        val entry = FirstAvailableEntry()
+        val alloc_entry = FirstAvailableEntry()
         val cvec = GetCoalesceVec(io.Requestor.bits.descriptor)
         val can_coalesce = CanCoalesce(cvec)
         val coalesce_entry = GetCoalesceEntry(cvec)
+        hasOutReqToSend := false.B
+        outReqEntryToSend := outReqEntryToSend
+        io.OutReq.valid := false.B
 
         when (io.Requestor.fire)
         {
-            hasOutReqToSend := false.B
-            io.OutReq.valid := false.B
+
             when (!can_coalesce)
             {
-                SynthesizePrintf("No Coalesce 0x%x, Allocate entry %d \n", io.Requestor.bits.descriptor.addr, entry)
-                AllocateEntry(entry, io.Requestor.bits)
+                SynthesizePrintf("No Coalesce 0x%x, Allocate entry %d DescState %d BaseID %d\n", io.Requestor.bits.descriptor.addr, alloc_entry, requestTable(alloc_entry).active, io.Requestor.bits.descriptor.baseID)
+                AllocateEntry(alloc_entry, io.Requestor.bits)
                 hasOutReqToSend := !io.OutReq.fire
                 io.OutReq.valid := true.B
+                outReqEntryToSend := alloc_entry
+                val src = outMaxID.U-alloc_entry
+                io.OutReq.bits := DescriptorToOutReq(io.Requestor.bits.descriptor, src)
+
+                when (io.OutReq.fire) {
+                    SynthesizePrintf("[FetchUnit] io.OutReq.fire baseReq %d\n", io.Requestor.bits.descriptor.baseID)
+                }
+
             }
             .otherwise {
-                SynthesizePrintf("Coalesce Entry! 0x%x\n", io.Requestor.bits.descriptor.addr)
+                SynthesizePrintf("Coalesce Entry! 0x%x BaseID %d Entry %d\n", io.Requestor.bits.descriptor.addr, io.Requestor.bits.descriptor.baseID, coalesce_entry)
                 CoalesceEntry(coalesce_entry, io.Requestor.bits.extractionDescriptor)
             }
             
@@ -239,26 +248,31 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
                 For now, when hasOutReqToSend is true, we will not take in another request
                 ---> this will simplify things greatly
             */
-            
-
-            outReqEntryToSend := entry
-            val src = outMaxID.U-entry
-            io.OutReq.bits := DescriptorToOutReq(io.Requestor.bits.descriptor, src)
         }
 
 
         when (hasOutReqToSend)
         {
-            val outReq = Wire(Decoupled(new TLBundleA(tlOutParams)))
-            outReq.valid := true.B
+            SynthesizePrintf("HasOutReqEntryToSend %d\n", outReqEntryToSend)
+            val outReq = Wire(new TLBundleA(tlOutParams))
 
             val src = outMaxID.U-outReqEntryToSend
-            outReq.bits := DescriptorToOutReq(requestTable(outReqEntryToSend).descriptor, src)
-            io.OutReq <> outReq
-            val (a_first, a_last, a_done) = tlOutEdge.firstlast(outReq)
-            hasOutReqToSend := !(a_last && io.OutReq.fire)
+            outReq := DescriptorToOutReq(requestTable(outReqEntryToSend).descriptor, src)
+            io.OutReq.valid := hasOutReqToSend
+            io.OutReq.bits := outReq
+
+
+            when (hasOutReqToSend && io.OutReq.fire) {
+                SynthesizePrintf("[FetchUnit]: outReqEntry %d hasOutReqToSend.fire baseReq %d\n", outReqEntryToSend, requestTable(outReqEntryToSend).descriptor.baseID)
+            }
+
+            val (a_first, a_last, a_done) = tlOutEdge.firstlast(io.OutReq)
+            hasOutReqToSend := !io.OutReq.fire
         }
-        io.Requestor.ready := (HasAvailableEntries() || can_coalesce) && !hasOutReqToSend
+        
+
+
+        io.Requestor.ready := (HasAvailableEntries() && !hasOutReqToSend) || can_coalesce 
 
         
         when (io.OutReq.fire) {
@@ -269,20 +283,18 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         io.inReply.ready := false.B
 
 
-        when (io.inReply.valid) {
-            io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
-        }
+  
+        io.inReply.ready := !dataRegFull   // can not receive more replies until we have done something with current data
+        
 
         when (io.inReply.fire) {
             SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull)
         }
-
         when (d_first && io.inReply.fire) {
             receivingEntry  := outMaxID.U - io.inReply.bits.source
         }
 
 
-    
 
 
         // shift in new data
@@ -291,7 +303,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
-        dataRegFull := Mux(d_last && io.inReply.fire && !dataRegFull, true.B, Mux(dataRegFull, !io.ControlUnit.fire, false.B))
+        dataRegFull := Mux(dataRegFull, !io.ControlUnit.fire, d_last && io.inReply.fire)
 
 
        // receivingEntry := (outMaxID.U - io.inReply.bits.source)

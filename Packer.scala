@@ -71,7 +71,7 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
             packedLineBytes(byteOffset + i.U) := writeBytes(i)
         }
     }
-    NumPackedBytes := Mux(io.Trapper.fire, 0.U, Mux(io.ColExtractor.fire, NumPackedBytes + DataSize, NumPackedBytes))
+    
 
 
     SynthesizePrintf(
@@ -79,7 +79,9 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
       NumPackedBytes,
       packedLineBytes.asUInt
     )
-}
+    }
+
+    NumPackedBytes := Mux(io.Trapper.fire, 0.U, Mux(io.ColExtractor.fire, NumPackedBytes + DataSize, NumPackedBytes))
 
 
 
