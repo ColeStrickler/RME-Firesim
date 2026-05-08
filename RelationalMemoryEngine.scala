@@ -79,7 +79,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   //val mdev = new MemoryDevice with HasReservedAddressRange
   
 
-  val beatBytes = 8
+  val beatBytes = 16
   val maxDRAM = math.pow(2, 33).toLong
   val addr2 = AddressSet.misaligned(maxDRAM, (BigInt(1) << 47) - maxDRAM)
   // ResourceBinding {
@@ -431,12 +431,18 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       perfDTU := perfDTU + fetch_unit.io.OutReq.fire.asUInt
-      perfNonDTU := perfNonDTU + in.a.fire
+      perfNonDTU := perfNonDTU + (in_edge.first(in.a) && in.a.fire).asUInt
 
 
       // Either from trapper or directly from DRAM if not an rme request
       //TLArbiter.robin(in_edge, in.d, replyFromDRAMDemux.io.outA)
       in.d <> replyFromDRAMDemux.io.outA
+      println(s"replyFromDRAMDemux ${in.d.bits.data.getWidth} ${replyFromDRAMDemux.io.outA.bits.data.getWidth}")
+
+      when (in.d.fire) {
+        SynthesizePrintf("in.d.fire 0x%x \n", in.d.bits.data)
+      }
+
 
       // Outgoing arbiter for passthrough and RME requests
       val fetch_unit_outbound = Seq(fetch_unit.io.OutReq) //fetch_units.map(fetch_unit => fetch_unit.OutReq)
@@ -490,7 +496,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val RequestorActive = RegInit(false.B)
       val ActiveRequestor = RegInit(0.U(log2Ceil(params.maxConfigs).W))
       val active_vector = reqFetchIO.map(req => req.fire)
-
+      println(s"OUT.D.BITS ${out.d.bits.data.getWidth}")
 
       reqFetchIO.zipWithIndex.foreach {case (req, i) =>
           
@@ -586,7 +592,7 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
 
     //val uncached = LazyModule(new DTUUncachedRegion)
       
-    pbus.coupleTo("dtu_uncached") {
+    sbus.coupleTo("dtu_uncached") {
       mbus.dtu_uncached_region.get.cpuNode := 
       TLBuffer(1)  :=  _
     }

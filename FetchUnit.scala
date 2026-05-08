@@ -177,23 +177,19 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         }
 
 
-        def DescriptorToOutReq(desc : RequestDescriptor, src: UInt) : TLBundleA = {
-            val ret = Wire(new TLBundleA(tlOutParams))
-            ret.opcode := TLMessages.Get
-            ret.param := 0.U
-            ret.size := 6.U
-            ret.source := src
-            ret.address := desc.addr
-            ret.data := 0.U
-            ret.mask := Fill(ret.mask.getWidth, 1.U(1.W)) // all valid
-            ret.corrupt := false.B
-            // safest defaults for structured fields
-            ret.user := 0.U.asTypeOf(ret.user)
-            ret.echo := 0.U.asTypeOf(ret.echo)
-            ret
+        def DescriptorToOutReq(desc: RequestDescriptor, src: UInt): TLBundleA = {
+            val (legal, ret) = tlOutEdge.Get(          // use the edge you already have!
+                fromSource = src,
+                toAddress  = desc.addr,
+                lgSize     = 6.U
+            )
+            // legal should be true — add assert(legal) in synthesis if you want
+
+            ret  // the helper already sets opcode, param, size, address, mask, data=0, corrupt=false, etc. correctly
         }
 
-
+        println(s"(FetchUnit) MASK ${new TLBundleA(tlOutParams).mask.getWidth}")
+        println(s"(FetchUnit) DATA ${new TLBundleA(tlOutParams).data.getWidth}")
 
         /*
             When we have an incoming request we have 3 options:
@@ -277,6 +273,14 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
         when (io.OutReq.fire) {
             SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
+              SynthesizePrintf(
+    "[DTU-A] addr=0x%x size=%d mask=0x%x beatFirst=%d beatLast=%d\n",
+    io.OutReq.bits.address,
+    io.OutReq.bits.size,
+    io.OutReq.bits.mask,
+    tlOutEdge.firstlast(io.OutReq)._1,
+    tlOutEdge.firstlast(io.OutReq)._2
+  )
         }
 
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
@@ -288,7 +292,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
 
         when (io.inReply.fire) {
-            SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull)
+            SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\ninReply.data 0x%x\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull, io.inReply.bits.data)
         }
         when (d_first && io.inReply.fire) {
             receivingEntry  := outMaxID.U - io.inReply.bits.source
@@ -323,3 +327,6 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         }
 
 }
+
+
+

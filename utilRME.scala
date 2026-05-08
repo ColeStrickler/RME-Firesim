@@ -138,6 +138,8 @@ class ConditionalDemuxD(params: TLBundleParameters) extends Module {
     val outB   = Decoupled(new TLBundleD(params)) // Output to location B
   })
 
+
+  println(s"CondtionalDemuxD ${io.dataIn.bits.data.getWidth},${io.outA.bits.data.getWidth},${io.outB.bits.data.getWidth}\n")
   // Default both outputs to zero
   val readyOther = Reg(Bool()) // so we have somewhere to connect it to
 
@@ -292,7 +294,7 @@ class DTUUncachedRegion(implicit p: Parameters) extends LazyModule {
     supportsGet = TransferSizes(1, 64),
     supportsPutFull = TransferSizes(1, 64),
     supportsPutPartial = TransferSizes(1, 64),
-    fifoId = Some(0))), 8))) // THIS MAY BE THE CAUSE OF BOOM CORE DIFFERENCES --> 16 TRANSFER SIZES INSTEAD OF 8 
+    fifoId = Some(0))), 16))) // THIS MAY BE THE CAUSE OF BOOM CORE DIFFERENCES --> 16 TRANSFER SIZES INSTEAD OF 8 
 
 
 
