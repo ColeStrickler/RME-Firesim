@@ -107,7 +107,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         when (io.TLInA.fire)
         {
             
-            SynthesizePrintf("io.TLInA.address 0x%x --> %d ticket: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, ticket_dispenser, matchedConfig)         
+          //  SynthesizePrintf("io.TLInA.address 0x%x --> %d ticket: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, ticket_dispenser, matchedConfig)         
         }
         
 
@@ -175,7 +175,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
         when (io.ControlUnit.fire)
         {
-            SynthesizePrintf("[TRAPPER] --> cache line from control unit. \n")
+          //  SynthesizePrintf("[TRAPPER] --> cache line from control unit. \n")
         }
 
         currentlyBeating := Mux(currentlyBeating, !d_done, io.ControlUnit.fire)
@@ -194,18 +194,18 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
 
         when (io.TLInA.fire) {
-            SynthesizePrintf("[TRAPPER] --> io.TLInA.fire\n")
+          //  SynthesizePrintf("[TRAPPER] --> io.TLInA.fire\n")
         }
         
         when (io.ControlUnit.fire)
         {
-            SynthesizePrintf("(FromControl) line in 0x%x\n",io.ControlUnit.bits.cacheLine)
+         //   SynthesizePrintf("(FromControl) line in 0x%x\n",io.ControlUnit.bits.cacheLine)
         }
 
         when (io.TLInD.fire)
         {
-            SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
-            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
+           // SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
+          //  SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
         }
         
         io.TLInD <> currentRequest

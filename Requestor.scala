@@ -23,13 +23,17 @@ case class ReqTicketInfo(reqIndexCount : Int, ticketWidth: Int) extends Bundle
   val ticket = UInt(ticketWidth.W)
   val valid = Bool()
 }
+
+object DESTINATION extends ChiselEnum {
+  val CONTROL_UNIT, PREFETCH_UNIT = Value
+}
+
 case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
 {
     val baseID = UInt(log2Ceil(inMaxID).W)
     val requestPlacement = UInt(7.W) // max of 64 places if we are doing 1 byte at a time selection
-    val config = UInt(4.W)
     val done  = Bool()
-    val zero = Bool()
+    val dst = DESTINATION()
     val addr = UInt(33.W)
   //  val ticket = UInt(16.W)
 }
@@ -56,7 +60,7 @@ case class ExtractionDescriptor(minDataSize: Int) extends Bundle {
 }
 
 
-case class RequestorFetchUnitPort(inParams: TLBundleParameters, outParams: TLBundleParameters, inMaxID:Int, outmaxID : Int) extends Bundle
+case class RequestorFetchUnitPort(inMaxID:Int, outmaxID : Int) extends Bundle
 {
     val descriptor = Output(new RequestDescriptor(inMaxID, outmaxID))
     val extractionDescriptor = Output(new ExtractionDescriptor(4))
@@ -68,11 +72,7 @@ case class RequestorAGUPort(bitwidth : Int = 32) extends Bundle
     val offsetAddrFromBase = Decoupled(UInt(bitwidth.W))    // input
     val offset = Flipped(Decoupled(UInt(bitwidth.W)))       // output
     val data_size = Output(UInt(6.W))                       // used by agu
-    val zero = Input(Bool())
 }
-
-
-
 
 
 
@@ -94,7 +94,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
 
         val io = IO(new Bundle {
             // Fetch Unit Port
-            val FetchUnit = Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))
+            val FetchUnit = Decoupled(new RequestorFetchUnitPort(inMaxID, outMaxID))
             //val done = Output(Bool())
             //val FetchReq = Decoupled(Output(new TLBundleA(tlInParams)))
             //val isBaseRequest = Output(Bool())
@@ -133,7 +133,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val active :: idle :: Nil = Enum(2)
         val stateReg = RegInit(idle)
         val requestQueue = Module(new Queue(TrapperReq(tlInParams, params), 4, flow=true))
-        val outQueue = Module(new Queue(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID), 16, flow=false)) // prevent stalls
+        val outQueue = Module(new Queue(new RequestorFetchUnitPort(inMaxID, outMaxID), 16, flow=false)) // prevent stalls
         val baseRequest = Reg(new TLBundleA(tlInParams))
         val ModifiedRequestsSent = WireInit(true.B) // track if we have sent all the necessary requests
         val readyNextReq = Wire(Bool())
@@ -165,10 +165,8 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         val TotalCacheLinesNeeded = RegInit(0.U(8.W))
         val TotalCacheLinesSent = RegInit(0.U(4.W))
 
-
-        val sumColWidths = (io.Config.ColumnWidths*io.Config.EnabledColumnCount).pad(32)
         val nDescriptors = RegInit(0.U(8.W))
-        nDescriptors := 64.U/io.Config.ColumnWidths
+        nDescriptors := 64.U(7.W) >> io.Config.ColumnWidths
         val backingEphemeralRegionStart = RegInit(0.U(33.W))
         val requestOffset = RegInit(0.U(maxRMEOffsetBitWidth.W))
         backingEphemeralRegionStart := Mux(requestQueue.io.deq.fire, EphemeralRegionConfig_Start, backingEphemeralRegionStart)
@@ -213,7 +211,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         
 
 
-        outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))
+        outQueue.io.enq.bits := 0.U.asTypeOf(new RequestorFetchUnitPort(inMaxID, outMaxID))
         outQueue.io.enq.valid := false.B
 
         io.FetchUnit.bits := outQueue.io.deq.bits
@@ -223,7 +221,10 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         //io.agu.doGen.bits := false.B
         //io.agu.doGen.valid := false.B
         io.agu.offset.ready := false.B
-        io.agu.data_size := io.Config.ColumnWidths
+        io.agu.data_size := (1.U << io.Config.ColumnWidths)
+        when (io.agu.offset.fire) {
+           // SynthesizePrintf("io.agu.data_size %d\n", (1.U << io.Config.ColumnWidths))
+        }
         io.agu.offsetAddrFromBase.valid := false.B
         io.agu.offsetAddrFromBase.bits := 0.U
         sentAddrAGU := false.B
@@ -311,7 +312,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val addr_desc_out = P_i_j - start
 
 
-                val extract_size = 2.U //io.Config.ColumnWidths --> hardcode for now!
+                val extract_size = io.Config.ColumnWidths // --> hardcode for now!
                 val placement = nDescriptorsSent
 
 
@@ -354,9 +355,9 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val descriptorOut = Wire(RequestDescriptor(inMaxID, outMaxID))
                 descriptorOut.baseID := baseRequest.source
                 descriptorOut.requestPlacement := nDescriptorsSent
-                descriptorOut.config := config.U
                 descriptorOut.done := done
-                descriptorOut.zero := io.agu.zero
+                descriptorOut.dst := DESTINATION.CONTROL_UNIT
+                //descriptorOut.zero := io.agu.zero
                 descriptorOut.addr := addr_desc_out + backingEphemeralRegionStart
                 val extractionDescriptorOut = Wire(ExtractionDescriptor(4))
                 extractionDescriptorOut.start := start 

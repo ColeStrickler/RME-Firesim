@@ -17,7 +17,7 @@ case class RMEConfigPortIO(params: RelMemParams) extends Bundle
     val RowSize = Output(UInt(32.W)) // size of each row in database
     val RowCount = Output(UInt(32.W)) // count of each row in database
     val EnabledColumnCount = Output(UInt(4.W)) // total number of enabled columns
-    val ColumnWidths = Output(UInt(7.W)) // width of ith enabled column
+    val ColumnWidths = Output(UInt(2.W)) // width of ith enabled column
     val ColumnOffsets = Output(Vec(15, UInt(7.W))) // offset off column j from column j-1
     val FrameOffset = Output(UInt(32.W))
     val Enabled = Output(Bool())

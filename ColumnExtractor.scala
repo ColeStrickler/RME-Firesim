@@ -75,7 +75,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     }
 
     when (io.CtrlUnit.fire) {
-         SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d dataIn 0x%x\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID, io.CtrlUnit.bits.data)
+      //   SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d dataIn 0x%x\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID, io.CtrlUnit.bits.data)
     }
 
 
@@ -101,7 +101,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
             is(3.U) { result := shifted(63, 0) }     // 8 bytes
         }
 
-        SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
+       // SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
         io.Packer.bits.dataSize := desc.size
         io.Packer.bits.dataIn := result
         io.Packer.valid := true.B

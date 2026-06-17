@@ -60,11 +60,11 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
    when (io.ColExtractor.fire) {
     baseReqSrc := io.ColExtractor.bits.descriptorIn.baseID
 
-    SynthesizePrintf(
-      "[PackerDataIn] ByteOffset %d Extracted: %d\n",
-      byteOffset,
-      io.ColExtractor.bits.dataIn
-    )
+    //SynthesizePrintf(
+    //  "[PackerDataIn] ByteOffset %d Extracted: %d\n",
+    //  byteOffset,
+    //  io.ColExtractor.bits.dataIn
+    //)
 
     for (i <- 0 until 8) {
         when (i.U < DataSize) {
@@ -74,11 +74,11 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
     
 
 
-    SynthesizePrintf(
-      "[Packer]: NumPackedBytes %d\n[Packer]:Line: 0x%x\n",
-      NumPackedBytes,
-      packedLineBytes.asUInt
-    )
+    //SynthesizePrintf(
+    //  "[Packer]: NumPackedBytes %d\n[Packer]:Line: 0x%x\n",
+    //  NumPackedBytes,
+    //  packedLineBytes.asUInt
+    //)
     }
 
     NumPackedBytes := Mux(io.Trapper.fire, 0.U, Mux(io.ColExtractor.fire, NumPackedBytes + DataSize, NumPackedBytes))
@@ -87,7 +87,7 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
 
     when ((NumPackedBytes === 64.U))
     {
-        SynthesizePrintf("[PACKER FULL]\n")
+       // SynthesizePrintf("[PACKER FULL]\n")
     }
 
     //val active :: clear :: Nil = Enum(2)

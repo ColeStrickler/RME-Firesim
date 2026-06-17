@@ -133,7 +133,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
         when (hasMatch)
         {
             when (io.FetchUnitPort.fire) {
-                SynthesizePrintf("[ControlUnit] in.fire! total desc 0x%x baseID %d ---> to %d\n", io.FetchUnitPort.bits.reqTableEntry.activeDesc, io.FetchUnitPort.bits.reqTableEntry.descriptor.baseID, matchEntry)
+             //   SynthesizePrintf("[ControlUnit] in.fire! total desc 0x%x baseID %d ---> to %d\n", io.FetchUnitPort.bits.reqTableEntry.activeDesc, io.FetchUnitPort.bits.reqTableEntry.descriptor.baseID, matchEntry)
             }
             colExtractorIOs(matchEntry).CtrlUnit.valid := io.FetchUnitPort.fire
             colExtractorIOs(matchEntry).CtrlUnit.bits.data := io.FetchUnitPort.bits.data
@@ -144,7 +144,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
         }
         .otherwise {
             when (io.FetchUnitPort.fire) {
-                SynthesizePrintf("[ControlUnit] in.fire! total desc 0x%x baseID %d ---> to %d\n", io.FetchUnitPort.bits.reqTableEntry.activeDesc, io.FetchUnitPort.bits.reqTableEntry.descriptor.baseID, freeEntry)
+              //  SynthesizePrintf("[ControlUnit] in.fire! total desc 0x%x baseID %d ---> to %d\n", io.FetchUnitPort.bits.reqTableEntry.activeDesc, io.FetchUnitPort.bits.reqTableEntry.descriptor.baseID, freeEntry)
             }
             colExtractorIOs(freeEntry).CtrlUnit.valid := io.FetchUnitPort.fire
             colExtractorIOs(freeEntry).CtrlUnit.bits.data := io.FetchUnitPort.bits.data

@@ -19,6 +19,7 @@ import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
 import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
+import subsystem.rme._
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
 import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
@@ -31,14 +32,11 @@ case class RelMemParams (
     nFetchUnits : Int = 16,
     inBoundXbar : Option[TLXbar] = None,
     withPerfCounter : Boolean = false,
-    maxConfigs : Int = 8,
+    maxConfigs : Int = 4,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
 )
 
-
-
 case object RMEKey extends Field[Option[RelMemParams]](None)
-
 
 class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 {
@@ -138,7 +136,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
-        val r_ColumnWidths = RegInit(4.U(6.W)) // will change later
+        val r_ColumnWidths = RegInit(3.U(2.W)) //  width = 2^n
         val r_ColumnOffsets = RegInit(VecInit(Seq.fill(15)(0.U(7.W))))
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
@@ -243,6 +241,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
                   mmio_ColumnWidth ++ mmio_ColumnOffsets ++ mmio_FrameOffset ++ mmio_Reset ++ perfCounters ++
                   mmio_EphemeralConfigStart ++ mmio_EphemeralConfigSize ++ mmio_EphemeralRegionConfig_PhysStart ++ dtu_access_reg ++ nondtu_access_reg
       val regmap = ctlnode.regmap(mmreg: _*)
+      mmreg.foreach { case (addr, fields) =>
+            println(f"DTU MMIO reg @ 0x$addr%x : ${fields.map(_.desc.get.name).mkString(", ")}")
+      }
 
       config.RowSize := r_RowSize
       config.RowCount := r_RowCount
@@ -259,7 +260,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
           config.ColumnOffsets(i) := r_ColumnOffsets(i)
       }
 
-      //SynthesizePrintf("rowsize: %d\n", r_RowSize)
+     //SynthesizePrintf("rowsize: %d\n", r_RowSize)
       when (r_Reset) // Synchronous High Reset
       {
           // r_Reset := false.B --> we will make software toggle the reset
@@ -330,6 +331,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       requestors.zipWithIndex.foreach{ case (req, i) =>
           req.agu <> agu_vec(i).module.io.reqIO
       }
+      agu_vec.zipWithIndex.foreach { case (agu, i) =>
+        agu.module.io.prefetchIO <> prefetch_units(i).Requestor
+      }
       
 
 
@@ -338,6 +342,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, 0,0))
 
+      val prefetch_units =  VecInit(Seq.tabulate(params.maxConfigs){i => 
+        val pre = Module(new PreFetchUnitRME(params, cachedRegionEdge, out_edge, out, i))
+        pre.io
+      })
 
       val control_unit = Module(new ControlUnitRME(params, out_edge, cachedRegionEdge, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
@@ -361,7 +369,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val dtu_cached_in_a = Wire(Decoupled(new TLBundleA(cachedParams)))
       when (cachedRegionIn.a.fire)
       {
-        SynthesizePrintf("cachedRegionIn.a.fire %d\n", cachedRegionIn.a.bits.source)
+      //  SynthesizePrintf("cachedRegionIn.a.fire %d\n", cachedRegionIn.a.bits.source)
       }
       
       
@@ -439,9 +447,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       in.d <> replyFromDRAMDemux.io.outA
       println(s"replyFromDRAMDemux ${in.d.bits.data.getWidth} ${replyFromDRAMDemux.io.outA.bits.data.getWidth}")
 
-      when (in.d.fire) {
-        SynthesizePrintf("in.d.fire 0x%x \n", in.d.bits.data)
-      }
+      //when (in.d.fire) {
+      //  SynthesizePrintf("in.d.fire 0x%x \n", in.d.bits.data)
+      //}
 
 
       // Outgoing arbiter for passthrough and RME requests
@@ -526,24 +534,34 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         requestorArb.io.in(i).valid := req.valid && (!RequestorActive || ActiveRequestor === i.U)
       }
 
-      val selectedRequestor = requestorArb.io.out
-      selectedRequestor.ready := fetchUnitReady 
+
       
+
+      val prefetchArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.cloneType, params.maxConfigs))
+      prefetch_units.zipWithIndex.foreach { case (pre, i) => 
+        prefetchArb.io.in(i) <> pre.FetchUnit.ToFetchUnit  
+      }
+
+      val prefetchReqArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.cloneType, 2))
+      prefetchReqArb.io.in(0) <> requestorArb.io.out
+      prefetchReqArb.io.in(1) <> prefetchReqArb.io.out
+
+      val selectedRequestor = prefetchReqArb.io.out
+      selectedRequestor.ready := fetchUnitReady 
+
       // CAN DEBUG WITH requestorArb.io.chosen
 
-        fetch_unit.io.Requestor.valid := selectedRequestor.valid
-        fetch_unit.io.Requestor.bits := selectedRequestor.bits
+      fetch_unit.io.Requestor.valid := selectedRequestor.valid
+      fetch_unit.io.Requestor.bits := selectedRequestor.bits
       
 
-
-      val beatWidth = 8
-      val dataRegWidth = (math.pow(2, params.maxDataSize+1)).toInt * beatWidth // this should give us the extra byte we need to extract excesses
-     //val fetch_unit_ctrl_io = VecInit(fetch_units.map(fetch_unit => fetch_unit.ControlUnit))
-
-
-
+      
     control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
-
+    prefetch_units.zipWithIndex.foreach {case (pre, i) =>
+      pre.FetchUnit.ToPre.bits := fetch_unit.io.Prefetch.ToPre.bits
+      pre.FetchUnit.ToPre.valid := (fetch_unit.io.Prefetch.ToPre.valid && (fetch_unit.io.Prefetch.ToPre.bits.config === i.U))  
+      fetch_unit.io.Prefetch.ToPre.ready := (pre.FetchUnit.ToPre.ready && (fetch_unit.io.Prefetch.ToPre.bits.config === i.U))
+    }
 
 
   }

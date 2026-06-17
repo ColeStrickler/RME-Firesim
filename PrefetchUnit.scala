@@ -10,7 +10,7 @@ import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.subsystem.{CacheBlockBytes}
-
+import subsystem.rme._
 
 
 case class SingleNextLinePrefetcherParams(
@@ -138,7 +138,8 @@ case class RequestorInjectionRequest(params: RelMemParams) extends Bundle {
 }
 
 
-case class PrefetchUnitRequestorIO(params: RelMemParams) extends Bundle {
+case class PrefetchUnitAGUIO(params: RelMemParams) extends Bundle {
+    val AsyncInjectionRequest = Flipped(Valid(UInt(log2Ceil(params.rmeAddressSize).W)))
     val InjectionRequest = Decoupled(new RequestorInjectionRequest(params))
     val Injection = Valid(Output(UInt(32.W)))
 }
@@ -154,11 +155,12 @@ case class PrefetchUnitFetchUnitPortIn() extends Bundle
 {
   val data = Input(UInt(512.W)) // 64 bytes = 1 cache line
   val addr = Input(UInt(33.W)) // will take out of the reqTableEntry
+  val config = Input(UInt(4.W))
 }
 
 case class PrefetchUnitFetchUnitPort(inMaxID:Int, outmaxID : Int) extends Bundle
 {
-  val ToFetchUnit = DecoupledIO(new PrefetchUnitFetchUnitPortOut(inMaxID, outmaxID))
+  val ToFetchUnit = DecoupledIO(new RequestorFetchUnitPort(inMaxID, outmaxID))
   val ToPre = Flipped(Decoupled(new PrefetchUnitFetchUnitPortIn()))
 }
 
@@ -167,7 +169,7 @@ case class PrefetchUnitFetchUnitPort(inMaxID:Int, outmaxID : Int) extends Bundle
 
 
 case class PreFetchUnitIO(params: RelMemParams, inMaxID : Int, outmaxID : Int) extends Bundle {
-    val Requestor = new PrefetchUnitRequestorIO(params)
+    val Requestor = new PrefetchUnitAGUIO(params)
     val FetchUnit = new PrefetchUnitFetchUnitPort(inMaxID, outmaxID)
 }
 
@@ -208,7 +210,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     def MakeReqDescriptor(addr: UInt): RequestDescriptor = {
         val descriptorOut = Wire(new RequestDescriptor(inMaxID, outMaxID))
         descriptorOut.baseID := 0.U
-        descriptorOut.requestPlacement := 0.U
+        descriptorOut.requestPlacement := config.U // reuse this field to support route back
         descriptorOut.done := false.B
         descriptorOut.dst := DESTINATION.CONTROL_UNIT
         descriptorOut.addr := addr
@@ -287,9 +289,20 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     RequestQueueArb.io.in(1).bits := MakeReqDescriptor(InjectionReqAddr)
     RequestQueueArb.io.in(1).valid := false.B
 
-    PrefetcherRME.io.snoop.valid := io.Requestor.InjectionRequest.fire 
+    PrefetcherRME.io.snoop.valid :=
+      io.Requestor.AsyncInjectionRequest.valid &&
+      !(
+        CheckRequestorReqPresentPacketTable(
+          io.Requestor.AsyncInjectionRequest.bits
+        )._1 &&
+        !CheckRequestReqPresentOutboundTable(
+          io.Requestor.AsyncInjectionRequest.bits
+        )
+      )
+
+
     PrefetcherRME.io.snoop.bits.write := false.B
-    PrefetcherRME.io.snoop.bits.address := InjectionReqAddr
+    PrefetcherRME.io.snoop.bits.address := io.Requestor.AsyncInjectionRequest.bits
 
     val state = RegInit(DataState.Available)
 

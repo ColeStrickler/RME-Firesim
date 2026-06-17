@@ -32,7 +32,9 @@ case class FetchUnitControlPort(tlParams : TLBundleParameters, inMaxID : Int, ou
 case class FetchUnitIO(tlInParams: TLBundleParameters, tlOutParams: TLBundleParameters, inMaxID : Int, outMaxID : Int, dataRegWidth : Int) extends Bundle
 {
 // Requestor Port
-        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(tlInParams, tlOutParams, inMaxID, outMaxID))) // Receive address to request from the Requestor Module]
+        val Requestor = Flipped(Decoupled(new RequestorFetchUnitPort(inMaxID, outMaxID))) // Receive address to request from the Requestor Module]
+
+        val Prefetch = Flipped(new PrefetchUnitFetchUnitPort(inMaxID, outMaxID))
         //val FetchReq = Flipped(Decoupled(Output(new TLBundleA(tlInEdge.bundle))))
         //val isBaseRequest = Flipped(Output(Bool()))
         //val Requestor_isBaseRequest = Flipped(Decoupled(Bool()))
@@ -219,7 +221,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
             when (!can_coalesce)
             {
-                SynthesizePrintf("No Coalesce 0x%x, Allocate entry %d DescState %d BaseID %d\n", io.Requestor.bits.descriptor.addr, alloc_entry, requestTable(alloc_entry).active, io.Requestor.bits.descriptor.baseID)
+                //SynthesizePrintf("No Coalesce 0x%x, Allocate entry %d DescState %d BaseID %d\n", io.Requestor.bits.descriptor.addr, alloc_entry, requestTable(alloc_entry).active, io.Requestor.bits.descriptor.baseID)
                 AllocateEntry(alloc_entry, io.Requestor.bits)
                 hasOutReqToSend := !io.OutReq.fire
                 io.OutReq.valid := true.B
@@ -228,12 +230,12 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
                 io.OutReq.bits := DescriptorToOutReq(io.Requestor.bits.descriptor, src)
 
                 when (io.OutReq.fire) {
-                    SynthesizePrintf("[FetchUnit] io.OutReq.fire baseReq %d\n", io.Requestor.bits.descriptor.baseID)
+                 //   SynthesizePrintf("[FetchUnit] io.OutReq.fire baseReq %d\n", io.Requestor.bits.descriptor.baseID)
                 }
 
             }
             .otherwise {
-                SynthesizePrintf("Coalesce Entry! 0x%x BaseID %d Entry %d\n", io.Requestor.bits.descriptor.addr, io.Requestor.bits.descriptor.baseID, coalesce_entry)
+                //SynthesizePrintf("Coalesce Entry! 0x%x BaseID %d Entry %d\n", io.Requestor.bits.descriptor.addr, io.Requestor.bits.descriptor.baseID, coalesce_entry)
                 CoalesceEntry(coalesce_entry, io.Requestor.bits.extractionDescriptor)
             }
             
@@ -249,7 +251,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         when (hasOutReqToSend)
         {
-            SynthesizePrintf("HasOutReqEntryToSend %d\n", outReqEntryToSend)
+          //  SynthesizePrintf("HasOutReqEntryToSend %d\n", outReqEntryToSend)
             val outReq = Wire(new TLBundleA(tlOutParams))
 
             val src = outMaxID.U-outReqEntryToSend
@@ -259,7 +261,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
 
             when (hasOutReqToSend && io.OutReq.fire) {
-                SynthesizePrintf("[FetchUnit]: outReqEntry %d hasOutReqToSend.fire baseReq %d\n", outReqEntryToSend, requestTable(outReqEntryToSend).descriptor.baseID)
+            //    SynthesizePrintf("[FetchUnit]: outReqEntry %d hasOutReqToSend.fire baseReq %d\n", outReqEntryToSend, requestTable(outReqEntryToSend).descriptor.baseID)
             }
 
             val (a_first, a_last, a_done) = tlOutEdge.firstlast(io.OutReq)
@@ -272,15 +274,15 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         
         when (io.OutReq.fire) {
-            SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
-              SynthesizePrintf(
-    "[DTU-A] addr=0x%x size=%d mask=0x%x beatFirst=%d beatLast=%d\n",
-    io.OutReq.bits.address,
-    io.OutReq.bits.size,
-    io.OutReq.bits.mask,
-    tlOutEdge.firstlast(io.OutReq)._1,
-    tlOutEdge.firstlast(io.OutReq)._2
-  )
+            //SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
+             // SynthesizePrintf(
+ //   "[DTU-A] addr=0x%x size=%d mask=0x%x beatFirst=%d beatLast=%d\n",
+ //   io.OutReq.bits.address,
+ //   io.OutReq.bits.size,
+ //   io.OutReq.bits.mask,
+ //   tlOutEdge.firstlast(io.OutReq)._1,
+ //   tlOutEdge.firstlast(io.OutReq)._2
+ // )
         }
 
         val (d_first, d_last, d_done, _, d_count) = tlOutEdge.firstlast2(io.inReply)
@@ -292,7 +294,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         
 
         when (io.inReply.fire) {
-            SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\ninReply.data 0x%x\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull, io.inReply.bits.data)
+       //     SynthesizePrintf("[FetchUnit]: inReply.firesrc %d (%d,%d,%d) dataRegfull %d\ninReply.data 0x%x\n", io.inReply.bits.source, d_first, d_last, d_done, dataRegFull, io.inReply.bits.data)
         }
         when (d_first && io.inReply.fire) {
             receivingEntry  := outMaxID.U - io.inReply.bits.source
@@ -309,21 +311,26 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
         dataRegFull := Mux(dataRegFull, !io.ControlUnit.fire, d_last && io.inReply.fire)
 
-
        // receivingEntry := (outMaxID.U - io.inReply.bits.source)
 
-        io.ControlUnit.valid := dataRegFull  // we can write valid data to SPM after receiving entire cache line
-        io.ControlUnit.bits.reqTableEntry := requestTable(receivingEntry)
+
+        val currTableEntry = requestTable(receivingEntry)
+
+        io.ControlUnit.valid := Mux(currTableEntry.descriptor.dst === DESTINATION.CONTROL_UNIT, dataRegFull, false.B)  // we can write valid data to SPM after receiving entire cache line
+        io.ControlUnit.bits.reqTableEntry := currTableEntry
         io.ControlUnit.bits.data := dataReg
 
 
-        
+        io.Prefetch.ToPre.valid := Mux(currTableEntry.descriptor.dst === DESTINATION.PREFETCH_UNIT, dataRegFull, false.B)
+        io.Prefetch.ToPre.bits.config := currTableEntry.descriptor.requestPlacement // we store this here since it is otherwise unused
+        io.Prefetch.ToPre.bits.addr := currTableEntry.descriptor.addr
+        io.Prefetch.ToPre.bits.data := dataReg
 
 
-        when (io.ControlUnit.fire)
+        when (io.ControlUnit.fire || io.Prefetch.ToPre.fire)
         {
             ResetEntry(receivingEntry)
-            SynthesizePrintf("ToControlUnit: receiving entry %d, BaseReqSrc %d\n", receivingEntry, requestTable(receivingEntry).descriptor.baseID)
+        //    SynthesizePrintf("ToControlUnit: receiving entry %d, BaseReqSrc %d\n", receivingEntry, requestTable(receivingEntry).descriptor.baseID)
         }
 
 }
