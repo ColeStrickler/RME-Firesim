@@ -136,7 +136,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val r_RowSize = RegInit(0.U(32.W))
         val r_RowCount = RegInit(0.U(32.W))
         val r_EnabledColumnCount = RegInit(0.U(4.W))
-        val r_ColumnWidths = RegInit(3.U(2.W)) //  width = 2^n
+        val r_ColumnWidths = RegInit(2.U(2.W)) //  width = 2^n
         val r_ColumnOffsets = RegInit(VecInit(Seq.fill(15)(0.U(7.W))))
         val r_FrameOffset = RegInit(0.U(32.W))
         val r_Reset = RegInit(false.B)
@@ -328,6 +328,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         val req = Module(new RequestorRME(params, cachedRegionEdge, out_edge, out, i))
         req.io
         })
+
+            val prefetch_units =  VecInit(Seq.tabulate(params.maxConfigs){i => 
+        val pre = Module(new PreFetchUnitRME(params, cachedRegionEdge, out_edge, out, i))
+        pre.io
+      })
+
+
       requestors.zipWithIndex.foreach{ case (req, i) =>
           req.agu <> agu_vec(i).module.io.reqIO
       }
@@ -342,10 +349,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, 0,0))
 
-      val prefetch_units =  VecInit(Seq.tabulate(params.maxConfigs){i => 
-        val pre = Module(new PreFetchUnitRME(params, cachedRegionEdge, out_edge, out, i))
-        pre.io
-      })
+
 
       val control_unit = Module(new ControlUnitRME(params, out_edge, cachedRegionEdge, i))
       val replyFromDRAMDemux = Module(new ConditionalDemuxD(out_edge.bundle))  
@@ -537,30 +541,31 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
       
 
-      val prefetchArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.cloneType, params.maxConfigs))
+      val prefetchArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.bits.cloneType, params.maxConfigs))
       prefetch_units.zipWithIndex.foreach { case (pre, i) => 
         prefetchArb.io.in(i) <> pre.FetchUnit.ToFetchUnit  
       }
 
-      val prefetchReqArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.cloneType, 2))
+      val prefetchReqArb = Module(new RRArbiter(prefetch_units.head.FetchUnit.ToFetchUnit.bits.cloneType, 2))
       prefetchReqArb.io.in(0) <> requestorArb.io.out
-      prefetchReqArb.io.in(1) <> prefetchReqArb.io.out
+      prefetchReqArb.io.in(1) <> prefetchArb.io.out
 
       val selectedRequestor = prefetchReqArb.io.out
       selectedRequestor.ready := fetchUnitReady 
-
-      // CAN DEBUG WITH requestorArb.io.chosen
-
       fetch_unit.io.Requestor.valid := selectedRequestor.valid
       fetch_unit.io.Requestor.bits := selectedRequestor.bits
       
 
       
     control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
+    val toPreReady = prefetch_units.zipWithIndex.map { case (pre, i) =>
+      pre.FetchUnit.ToPre.ready &&
+      (fetch_unit.io.Prefetch.ToPre.bits.config === i.U)
+    }.reduce(_ || _)
+    fetch_unit.io.Prefetch.ToPre.ready := toPreReady
     prefetch_units.zipWithIndex.foreach {case (pre, i) =>
       pre.FetchUnit.ToPre.bits := fetch_unit.io.Prefetch.ToPre.bits
-      pre.FetchUnit.ToPre.valid := (fetch_unit.io.Prefetch.ToPre.valid && (fetch_unit.io.Prefetch.ToPre.bits.config === i.U))  
-      fetch_unit.io.Prefetch.ToPre.ready := (pre.FetchUnit.ToPre.ready && (fetch_unit.io.Prefetch.ToPre.bits.config === i.U))
+      pre.FetchUnit.ToPre.valid := (fetch_unit.io.Prefetch.ToPre.valid && (fetch_unit.io.Prefetch.ToPre.bits.config === i.U)) 
     }
 
 

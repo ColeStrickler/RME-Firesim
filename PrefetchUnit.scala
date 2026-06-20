@@ -140,27 +140,29 @@ case class RequestorInjectionRequest(params: RelMemParams) extends Bundle {
 
 case class PrefetchUnitAGUIO(params: RelMemParams) extends Bundle {
     val AsyncInjectionRequest = Flipped(Valid(UInt(log2Ceil(params.rmeAddressSize).W)))
-    val InjectionRequest = Decoupled(new RequestorInjectionRequest(params))
+    val InjectionRequest = Flipped(Decoupled(new RequestorInjectionRequest(params)))
     val Injection = Valid(Output(UInt(32.W)))
-}
-
-case class PrefetchUnitFetchUnitPortOut(inMaxID:Int, outmaxID : Int) extends Bundle
-{
-  val descriptor = Output(new RequestDescriptor(inMaxID, outmaxID))
-  val extractionDescriptor = Output(new ExtractionDescriptor(4))
+    val config_StreamPhysRegisters = Input(Vec(1, UInt(64.W)))
+    val config_StreamDataSize = Input(UInt(32.W))
 }
 
 
 case class PrefetchUnitFetchUnitPortIn() extends Bundle
 {
-  val data = Input(UInt(512.W)) // 64 bytes = 1 cache line
-  val addr = Input(UInt(33.W)) // will take out of the reqTableEntry
-  val config = Input(UInt(4.W))
+  val data = UInt(512.W) // 64 bytes = 1 cache line
+  val addr = UInt(33.W) // will take out of the reqTableEntry
+  val config = UInt(4.W)
 }
 
 case class PrefetchUnitFetchUnitPort(inMaxID:Int, outmaxID : Int) extends Bundle
 {
   val ToFetchUnit = DecoupledIO(new RequestorFetchUnitPort(inMaxID, outmaxID))
+  val ToPre = Flipped(Decoupled(new PrefetchUnitFetchUnitPortIn()))
+}
+
+case class FetchUnitPrefetchUnitPort(inMaxID:Int, outmaxID : Int) extends Bundle
+{
+  //val ToFetchUnit = DecoupledIO(new RequestorFetchUnitPort(inMaxID, outmaxID))
   val ToPre = Flipped(Decoupled(new PrefetchUnitFetchUnitPortIn()))
 }
 
@@ -204,19 +206,8 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
 
 
 
-
-
-
-    def MakeReqDescriptor(addr: UInt): RequestDescriptor = {
-        val descriptorOut = Wire(new RequestDescriptor(inMaxID, outMaxID))
-        descriptorOut.baseID := 0.U
-        descriptorOut.requestPlacement := config.U // reuse this field to support route back
-        descriptorOut.done := false.B
-        descriptorOut.dst := DESTINATION.CONTROL_UNIT
-        descriptorOut.addr := addr
-        descriptorOut
-    }
     
+
 
     def InjectionPacketAsHalfWords(injectionPacket: UInt): Vec[UInt] = {
         injectionPacket.asTypeOf(Vec(32, UInt(16.W)))
@@ -229,20 +220,35 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     
 
     
-    val injectionPackets = VecInit(Seq.fill(depthAhead)(RegInit(0.U(512.W))))
-    val injectionPacketAddr = VecInit(Seq.fill(depthAhead)(RegInit(0.U(28.W))))
-    val stream2PhysicalAddressStart = RegInit(0.U(33.W)) // pointed to the corresponding metadata stream start 
-    def CheckRequestorReqPresentPacketTable(addr: UInt) : (Bool, UInt) = {
-        val isEqual = injectionPacketAddr.map(_ === addr)
-        (isEqual.reduce(_||_), PriorityEncoder(isEqual))
+    val nInjectionPackets = depthAhead * 2
+
+    val injectionPackets =
+      RegInit(VecInit(Seq.fill(nInjectionPackets)(0.U(512.W))))
+
+    val injectionPacketAddr =
+      RegInit(VecInit(Seq.fill(nInjectionPackets)(0.U(28.W))))
+
+    val injectionPacketsValid =
+      RegInit(VecInit(Seq.fill(nInjectionPackets)(false.B)))
+    val stream2PhysicalAddressStart = RegInit((params.rmeaddress + 0x08000000L).U(33.W)) // pointed to the corresponding metadata stream start 
+    stream2PhysicalAddressStart := io.Requestor.config_StreamPhysRegisters(0)
+    def CheckRequestorReqPresentPacketTable(reqAddr: UInt): (Bool, UInt) = {
+    val matches = injectionPacketAddr.zip(injectionPacketsValid).map {
+      case (entryAddr, valid) =>
+        valid && entryAddr === reqAddr
     }
 
-    val OldestInjectionPacket = RegInit(0.U(log2Ceil(depthAhead).W))
+    (matches.reduce(_ || _), PriorityEncoder(matches))
+  }
+
+    val OldestInjectionPacket = RegInit(0.U(log2Ceil(depthAhead*2).W))
     def IncOldestInjectionPacket() : Unit = {
-        OldestInjectionPacket := Mux(OldestInjectionPacket === (depthAhead-1).U, 0.U, OldestInjectionPacket+1.U)
+        OldestInjectionPacket := Mux(OldestInjectionPacket === (depthAhead*2-1).U, 0.U, OldestInjectionPacket+1.U)
     }
-    def AllocateEntryInjectionPacketTable(data: UInt) : Unit = {
+    def AllocateEntryInjectionPacketTable(data: UInt, addr: UInt) : Unit = {
       injectionPackets(OldestInjectionPacket) := data
+      injectionPacketAddr(OldestInjectionPacket) := (addr-stream2PhysicalAddressStart)
+      injectionPacketsValid(OldestInjectionPacket) := true.B
       IncOldestInjectionPacket()
     }
 
@@ -275,10 +281,28 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     }
 
 
+    def MakeReqDescriptor(addr: UInt): RequestDescriptor = {
+        val descriptorOut = Wire(new RequestDescriptor(inMaxID, outMaxID))
+        descriptorOut.baseID := 0.U
+        descriptorOut.requestPlacement := config.U // reuse this field to support route back
+        descriptorOut.done := false.B
+        descriptorOut.dst := DESTINATION.PREFETCH_UNIT
+        descriptorOut.addr := addr + stream2PhysicalAddressStart
+        descriptorOut
+    }
+    
 
-    val PrefetcherRME = Module(new SingleNextLinePrefetcherRME(SingleNextLinePrefetcherParams(ahead=depthAhead)))
+
+
+
+    val PrefetcherRME = Module(new SingleNextLinePrefetcherRME(SingleNextLinePrefetcherParams(ahead=depthAhead, handleVA=true)))
     val DownstreamReqQueue = Module(new Queue(new RequestDescriptor(inMaxID, outMaxID), depthAhead, flow=false)) // can maybe just make this an address, and make descriptor on way out
     val RequestQueueArb = Module(new RRArbiter(new RequestDescriptor(inMaxID, outMaxID), 2))
+
+    when (PrefetcherRME.io.request.fire)
+    {
+     // SynthesizePrintf("[PrefetcherRME] PREFETCHER FIRE 0x%x\n", PrefetcherRME.io.request.bits.address)
+    }
 
   
     RequestQueueArb.io.in(0).bits := MakeReqDescriptor(PrefetcherRME.io.request.bits.address)
@@ -288,6 +312,9 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     val InjectionReqAddr = io.Requestor.InjectionRequest.bits.RequestAddr
     RequestQueueArb.io.in(1).bits := MakeReqDescriptor(InjectionReqAddr)
     RequestQueueArb.io.in(1).valid := false.B
+
+    DownstreamReqQueue.io.enq <> RequestQueueArb.io.out
+
 
     PrefetcherRME.io.snoop.valid :=
       io.Requestor.AsyncInjectionRequest.valid &&
@@ -299,11 +326,11 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
           io.Requestor.AsyncInjectionRequest.bits
         )
       )
-
+ 
 
     PrefetcherRME.io.snoop.bits.write := false.B
     PrefetcherRME.io.snoop.bits.address := io.Requestor.AsyncInjectionRequest.bits
-
+      io.Requestor.Injection.bits := 0.U
     val state = RegInit(DataState.Available)
 
     io.Requestor.Injection.valid := false.B
@@ -311,20 +338,40 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
 
     when (io.FetchUnit.ToPre.fire)
     {
-      AllocateEntryInjectionPacketTable(io.FetchUnit.ToPre.bits.data)
-    }
+      AllocateEntryInjectionPacketTable(io.FetchUnit.ToPre.bits.data, io.FetchUnit.ToPre.bits.addr)
+    //  SynthesizePrintf("io.FetchUnit.ToPre.fire 0x%x -- 0x%x\n", io.FetchUnit.ToPre.bits.data, io.FetchUnit.ToPre.bits.addr)
+      //when (io.Requestor.InjectionRequest.valid)
+      //{
+      //  SynthesizePrintf("io.Requestor.InjectionRequest.valid --> addr needed 0x%x\n", io.Requestor.InjectionRequest.bits.RequestAddr)
+      //}
 
+     // SynthesizePrintf("io.FetchUnit.ToPre.fire --> data 0x%x\n", io.FetchUnit.ToPre.bits.data)
+      for (i <- 0 until depthAhead*2) {
+        //SynthesizePrintf(
+        //  "packet_table[%d] addr=0x%x valid=%d data 0x%x\n",
+        //  i.U,
+        //  injectionPacketAddr(i),
+        //  injectionPacketsValid(i),
+        //  injectionPackets(i)
+        //)
+      }
+    }
+    when (io.Requestor.AsyncInjectionRequest.valid)
+    {
+        //SynthesizePrintf("(PrefetchUnit[%d].AsyncInjectionRequest.valid) 0x%x\n", config.U, io.Requestor.AsyncInjectionRequest.bits)   
+    }
 
     // Request to FetchUnit
     io.FetchUnit.ToFetchUnit.valid := DownstreamReqQueue.io.deq.valid
     DownstreamReqQueue.io.deq.ready := io.FetchUnit.ToFetchUnit.ready
     io.FetchUnit.ToFetchUnit.bits.descriptor := DownstreamReqQueue.io.deq.bits
     io.FetchUnit.ToFetchUnit.bits.extractionDescriptor := 0.U.asTypeOf(io.FetchUnit.ToFetchUnit.bits.extractionDescriptor)
-
+    io.FetchUnit.ToPre.ready := true.B // for now we will just accept everything
 
     // When new injection request
     when (io.Requestor.InjectionRequest.valid)
     {
+       // SynthesizePrintf("InjectionRequest.valid 0x%x\n")
         /*
             States:
                 1. Data is available
@@ -336,7 +383,29 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
         val presentOutBoundTable = CheckRequestReqPresentOutboundTable(InjectionReqAddr)
         val (isPresentDataCache, dataCacheIdx) = CheckRequestorReqPresentPacketTable(InjectionReqAddr)
 
+        when (presentOutBoundTable || isPresentDataCache)
+        {
+         // SynthesizePrintf("InjectionRequest hit! 0x%x\n", InjectionReqAddr)
+        }
 
+
+        when(io.FetchUnit.ToFetchUnit.fire)
+        {
+        //    SynthesizePrintf("(PrefetchUnit[%d].ToFetchUnit.fire) 0x%x\n", config.U, io.FetchUnit.ToFetchUnit.bits.descriptor.addr)   
+        }
+        //when (io.FetchUnit.ToPre.fire)
+        //{
+        //    SynthesizePrintf("(PrefetchUnit[%d].ToPre.fire)\n", config.U)   
+        //}
+
+
+
+        when (io.Requestor.InjectionRequest.fire)
+        {
+          //  SynthesizePrintf("(PrefetchUnit[%d].InjectionRequest.fire) 0x%x\n", config.U, io.Requestor.InjectionRequest.bits.RequestAddr)  
+        }
+
+        
         switch (state)
         {
           is (DataState.Available)
@@ -344,13 +413,15 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             when(isPresentDataCache)
             {
               val data = InjectionPacketAsWords(injectionPackets(dataCacheIdx))(io.Requestor.InjectionRequest.bits.InjectionReqNum)
+              SynthesizePrintf("isPresentDataCache %d %d 0x%x\n", dataCacheIdx, io.Requestor.InjectionRequest.bits.InjectionReqNum, data)
               io.Requestor.InjectionRequest.ready := true.B
               io.Requestor.Injection.bits:= data
               io.Requestor.Injection.valid := true.B
 
             }.elsewhen(presentOutBoundTable)
             {
-              val pred = io.FetchUnit.ToPre.fire && io.FetchUnit.ToPre.bits.addr === InjectionReqAddr
+             // SynthesizePrintf("PrefetchUnitCurrentState %d present in OutBoundTable\n", state.asUInt)
+              val pred = io.FetchUnit.ToPre.fire && (io.FetchUnit.ToPre.bits.addr-stream2PhysicalAddressStart) === InjectionReqAddr
               state := Mux(pred, DataState.Available, DataState.Requested) // ensure we 
               when(pred)
               {
@@ -360,13 +431,15 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             }
             .otherwise
             {
+           //   SynthesizePrintf("PrefetchUnitCurrentState %d NeedRequest\n", state.asUInt)
               state := DataState.NeedRequest
             }
           }
 
           is (DataState.Requested)
           {
-            val pred = io.FetchUnit.ToPre.fire && io.FetchUnit.ToPre.bits.addr === InjectionReqAddr
+            //SynthesizePrintf("PrefetchUnit CurrentState=Requested\n")
+            val pred = io.FetchUnit.ToPre.fire && (io.FetchUnit.ToPre.bits.addr-stream2PhysicalAddressStart) === InjectionReqAddr
             state := Mux(pred, DataState.Available, DataState.Requested)
             when(pred)
             {
