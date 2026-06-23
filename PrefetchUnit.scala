@@ -139,7 +139,7 @@ case class RequestorInjectionRequest(params: RelMemParams) extends Bundle {
 
 
 case class PrefetchUnitAGUIO(params: RelMemParams) extends Bundle {
-    val AsyncInjectionRequest = Flipped(Valid(UInt(log2Ceil(params.rmeAddressSize).W)))
+   // val AsyncInjectionRequest = Flipped(Valid(UInt(log2Ceil(params.rmeAddressSize).W)))
     val InjectionRequest = Flipped(Decoupled(new RequestorInjectionRequest(params)))
     val Injection = Valid(Output(UInt(32.W)))
     val config_StreamPhysRegisters = Input(Vec(1, UInt(64.W)))
@@ -317,19 +317,11 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
 
 
     PrefetcherRME.io.snoop.valid :=
-      io.Requestor.AsyncInjectionRequest.valid &&
-      !(
-        CheckRequestorReqPresentPacketTable(
-          io.Requestor.AsyncInjectionRequest.bits
-        )._1 &&
-        !CheckRequestReqPresentOutboundTable(
-          io.Requestor.AsyncInjectionRequest.bits
-        )
-      )
+      io.Requestor.InjectionRequest.fire
  
 
     PrefetcherRME.io.snoop.bits.write := false.B
-    PrefetcherRME.io.snoop.bits.address := io.Requestor.AsyncInjectionRequest.bits
+    PrefetcherRME.io.snoop.bits.address := io.Requestor.InjectionRequest.bits.RequestAddr
       io.Requestor.Injection.bits := 0.U
     val state = RegInit(DataState.Available)
 
@@ -356,10 +348,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
         //)
       }
     }
-    when (io.Requestor.AsyncInjectionRequest.valid)
-    {
-        //SynthesizePrintf("(PrefetchUnit[%d].AsyncInjectionRequest.valid) 0x%x\n", config.U, io.Requestor.AsyncInjectionRequest.bits)   
-    }
+
 
     // Request to FetchUnit
     io.FetchUnit.ToFetchUnit.valid := DownstreamReqQueue.io.deq.valid
