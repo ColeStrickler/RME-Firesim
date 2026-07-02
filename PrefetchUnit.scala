@@ -301,7 +301,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
 
     when (PrefetcherRME.io.request.fire)
     {
-     // SynthesizePrintf("[PrefetcherRME] PREFETCHER FIRE 0x%x\n", PrefetcherRME.io.request.bits.address)
+      //SynthesizePrintf("[PrefetcherRME] PREFETCHER FIRE 0x%x\n", PrefetcherRME.io.request.bits.address)
     }
 
   
@@ -309,7 +309,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     RequestQueueArb.io.in(0).valid := PrefetcherRME.io.request.valid
     PrefetcherRME.io.request.ready := RequestQueueArb.io.in(0).ready
 
-    val InjectionReqAddr = io.Requestor.InjectionRequest.bits.RequestAddr
+    val InjectionReqAddr = Mux(io.Requestor.InjectionRequest.bits.RequestAddr < (params.rmeAddressSize).U, io.Requestor.InjectionRequest.bits.RequestAddr, 0.U) 
     RequestQueueArb.io.in(1).bits := MakeReqDescriptor(InjectionReqAddr)
     RequestQueueArb.io.in(1).valid := false.B
 
@@ -331,12 +331,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     when (io.FetchUnit.ToPre.fire)
     {
       AllocateEntryInjectionPacketTable(io.FetchUnit.ToPre.bits.data, io.FetchUnit.ToPre.bits.addr)
-    //  SynthesizePrintf("io.FetchUnit.ToPre.fire 0x%x -- 0x%x\n", io.FetchUnit.ToPre.bits.data, io.FetchUnit.ToPre.bits.addr)
-      //when (io.Requestor.InjectionRequest.valid)
-      //{
-      //  SynthesizePrintf("io.Requestor.InjectionRequest.valid --> addr needed 0x%x\n", io.Requestor.InjectionRequest.bits.RequestAddr)
-      //}
-
+     // SynthesizePrintf("io.FetchUnit.ToPre.fire 0x%x -- 0x%x\n", io.FetchUnit.ToPre.bits.data, io.FetchUnit.ToPre.bits.addr)
      // SynthesizePrintf("io.FetchUnit.ToPre.fire --> data 0x%x\n", io.FetchUnit.ToPre.bits.data)
       for (i <- 0 until depthAhead*2) {
         //SynthesizePrintf(
@@ -360,7 +355,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
     // When new injection request
     when (io.Requestor.InjectionRequest.valid)
     {
-       // SynthesizePrintf("InjectionRequest.valid 0x%x\n")
+       SynthesizePrintf("InjectionRequest.valid 0x%x\n", io.Requestor.InjectionRequest.bits.RequestAddr)
         /*
             States:
                 1. Data is available
@@ -402,7 +397,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             when(isPresentDataCache)
             {
               val data = InjectionPacketAsWords(injectionPackets(dataCacheIdx))(io.Requestor.InjectionRequest.bits.InjectionReqNum)
-              SynthesizePrintf("isPresentDataCache %d %d 0x%x\n", dataCacheIdx, io.Requestor.InjectionRequest.bits.InjectionReqNum, data)
+              SynthesizePrintf("isPresentDataCache %d 0x%x\n", io.Requestor.InjectionRequest.bits.InjectionReqNum, data)
               io.Requestor.InjectionRequest.ready := true.B
               io.Requestor.Injection.bits:= data
               io.Requestor.Injection.valid := true.B
@@ -420,14 +415,14 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             }
             .otherwise
             {
-           //   SynthesizePrintf("PrefetchUnitCurrentState %d NeedRequest\n", state.asUInt)
+            //  SynthesizePrintf("PrefetchUnitCurrentState %d NeedRequest\n", state.asUInt)
               state := DataState.NeedRequest
             }
           }
 
           is (DataState.Requested)
           {
-            //SynthesizePrintf("PrefetchUnit CurrentState=Requested\n")
+           // SynthesizePrintf("PrefetchUnit CurrentState=Requested\n")
             val pred = io.FetchUnit.ToPre.fire && (io.FetchUnit.ToPre.bits.addr-stream2PhysicalAddressStart) === InjectionReqAddr
             state := Mux(pred, DataState.Available, DataState.Requested)
             when(pred)
@@ -438,6 +433,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
 
           is (DataState.NeedRequest)
           {
+           // SynthesizePrintf("PrefetchUnit NeedRequest %d\n", RequestQueueArb.io.in(1).fire)
             RequestQueueArb.io.in(1).valid := true.B
             val pred = RequestQueueArb.io.in(1).fire
             state := Mux(pred, DataState.Requested, DataState.NeedRequest)

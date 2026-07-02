@@ -274,7 +274,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         
         when (io.OutReq.fire) {
-        SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
+        //SynthesizePrintf("[FetchUnit]: OutReq.fire 0x%x src %d\n", io.OutReq.bits.address, io.OutReq.bits.source)
              // SynthesizePrintf(
  //   "[DTU-A] addr=0x%x size=%d mask=0x%x beatFirst=%d beatLast=%d\n",
  //   io.OutReq.bits.address,

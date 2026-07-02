@@ -34,7 +34,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
         torme
     }
 
-    def CheckConfigHit(addr: UInt) : UInt = {
+    def CheckConfigHit(addr: UInt) : (UInt, UInt) = {
             //val hitIndex = Wire(0.U(log2Ceil(params.maxConfigs).W))
             val hits = (0 until params.maxConfigs).map { i =>
             val start = io.Config.EphemeralRegionConfig_PhysStart(i)
@@ -53,7 +53,7 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
 
 
 
-        hitIndex
+        (hitIndex, numHits)
     }
 
 
@@ -103,11 +103,13 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
     */
        val matchedConfig = Wire(UInt(log2Ceil(params.maxConfigs).W))
         matchedConfig := 0.U
-        matchedConfig := CheckConfigHit(io.TLInA.bits.address)
+        val (mconfig, nhits) =  CheckConfigHit(io.TLInA.bits.address)
+
+        matchedConfig := mconfig
         when (io.TLInA.fire)
         {
             
-          //  SynthesizePrintf("io.TLInA.address 0x%x --> %d ticket: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, ticket_dispenser, matchedConfig)         
+            SynthesizePrintf("io.TLInA.address 0x%x --> %d ticket: %d --> config %d\n", io.TLInA.bits.address, io.TLInA.bits.source, ticket_dispenser, matchedConfig)         
         }
         
 
@@ -202,10 +204,10 @@ class TrapperRME(params: RelMemParams, tlInEdge: TLEdgeIn, tlOutEdge: TLEdgeOut,
          //   SynthesizePrintf("(FromControl) line in 0x%x\n",io.ControlUnit.bits.cacheLine)
         }
 
-        when (io.TLInD.fire)
+        when (io.TLInD.fire && d_first)
         {
            // SynthesizePrintf("[TRAPPER] ==> reply cacheLine: 0x%x\n", replyCacheLine)
-          //  SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
+            SynthesizePrintf("[TRAPPER] ==> sent reply to 0x%x with data: 0x%x to source %d, size %d\n", baseReqUpdated.address, currentRequest.bits.data, currentRequest.bits.source, currentRequest.bits.size)
         }
         
         io.TLInD <> currentRequest
