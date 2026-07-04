@@ -389,7 +389,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
           //  SynthesizePrintf("(PrefetchUnit[%d].InjectionRequest.fire) 0x%x\n", config.U, io.Requestor.InjectionRequest.bits.RequestAddr)  
         }
 
-        
+
         switch (state)
         {
           is (DataState.Available)
@@ -398,8 +398,9 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             {
               val data = InjectionPacketAsWords(injectionPackets(dataCacheIdx))(io.Requestor.InjectionRequest.bits.InjectionReqNum)
               SynthesizePrintf("isPresentDataCache %d 0x%x\n", io.Requestor.InjectionRequest.bits.InjectionReqNum, data)
+
               io.Requestor.InjectionRequest.ready := true.B
-              io.Requestor.Injection.bits:= data
+              io.Requestor.Injection.bits := data
               io.Requestor.Injection.valid := true.B
 
             }.elsewhen(presentOutBoundTable)
