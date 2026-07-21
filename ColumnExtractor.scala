@@ -70,6 +70,9 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     descriptor := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.descriptorIn, descriptor)
 
     
+
+    // We should be able to extract everything at once.
+    // And just mask when >= descriptorCount
     def ActiveDescriptor() : ExtractionDescriptor = {
         descriptors(descriptorCount-1.U)
     }

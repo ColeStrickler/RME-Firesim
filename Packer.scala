@@ -98,6 +98,4 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int) extends Mod
     io.Trapper.valid := (NumPackedBytes === 64.U)  //|| willOverflow
     io.Trapper.bits.PackedLine := packedLineBytes.asUInt
     io.Trapper.bits.BaseReqSrc := baseReqSrc
-
-
 }
