@@ -140,7 +140,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             colExtractorIOs(matchEntry).CtrlUnit.bits.position := io.FetchUnitPort.bits.reqTableEntry.descriptor.requestPlacement
             colExtractorIOs(matchEntry).CtrlUnit.bits.extractionDescriptors := io.FetchUnitPort.bits.reqTableEntry.extractionDescriptors
             colExtractorIOs(matchEntry).CtrlUnit.bits.descriptorIn := io.FetchUnitPort.bits.reqTableEntry.descriptor
-            colExtractorIOs(matchEntry).CtrlUnit.bits.nDesc := io.FetchUnitPort.bits.reqTableEntry.activeDesc
+            //colExtractorIOs(matchEntry).CtrlUnit.bits.nDesc := io.FetchUnitPort.bits.reqTableEntry.activeDesc
         }
         .otherwise {
             when (io.FetchUnitPort.fire) {
@@ -151,7 +151,8 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             colExtractorIOs(freeEntry).CtrlUnit.bits.position := io.FetchUnitPort.bits.reqTableEntry.descriptor.requestPlacement
             colExtractorIOs(freeEntry).CtrlUnit.bits.extractionDescriptors := io.FetchUnitPort.bits.reqTableEntry.extractionDescriptors
             colExtractorIOs(freeEntry).CtrlUnit.bits.descriptorIn := io.FetchUnitPort.bits.reqTableEntry.descriptor
-            colExtractorIOs(freeEntry).CtrlUnit.bits.nDesc := io.FetchUnitPort.bits.reqTableEntry.activeDesc
+            //colExtractorIOs(freeEntry).CtrlUnit.bits.nDesc := io.FetchUnitPort.bits.reqTableEntry.activeDesc
+            colExtractorIOs(freeEntry).CtrlUnit.bits.extractionDescriptorsValid := io.FetchUnitPort.bits.reqTableEntry.extractionDescriptorsValid
             currentlyPacking(freeEntry) := true.B
             BaseReqSrc(freeEntry) := baseIDFromDesc
         }

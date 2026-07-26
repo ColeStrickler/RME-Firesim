@@ -18,7 +18,7 @@ case class CtrlUnitColExtractorIO(inMaxID: Int, outMaxID: Int, nExtractionDesc :
     val data = UInt(512.W) // take in an entire cache line
     val position = UInt(log2Ceil(64).W)
     val extractionDescriptors = Vec(nExtractionDesc, new ExtractionDescriptor(4))
-    val nDesc = UInt(log2Ceil(nExtractionDesc+1).W)
+    val extractionDescriptorsValid = Vec(nExtractionDesc, Bool())
     val descriptorIn = new RequestDescriptor(inMaxID, outMaxID)
 }
 
@@ -28,7 +28,7 @@ case class ColumnExtractorIO(inMaxID:Int, outmaxID : Int, dataRegWidth : Int, nE
     //val DescriptorIn = Input(RequestDescriptor(inMaxID, outmaxID))
    // val DataSizeOut = Output(UInt(7.W)) // size in bytes
     val CtrlUnit = Flipped(DecoupledIO(new CtrlUnitColExtractorIO(inMaxID, outmaxID)))
-    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, minDataSize))
+    val Packer = DecoupledIO(PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, minDataSize, nExtractionDesc))
 
     
 }
@@ -49,7 +49,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
 
     val io = IO(new ColumnExtractorIO(inMaxID, outmaxID, dataRegWidth))
     io.Packer.valid := false.B
-    io.Packer.bits := 0.U.asTypeOf(new PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, 4))
+    io.Packer.bits := 0.U.asTypeOf(new PackerColExtractIO(inMaxID, outmaxID, dataRegWidth, 4, nExtractionDesc))
 
     val tmpLine = RegInit(0.U(512.W))
     //val tmpDescriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
@@ -65,34 +65,38 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
 
     tmpLine := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.data, tmpLine)
     descriptors := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.extractionDescriptors, descriptors)
-    descriptorCount := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.nDesc, Mux(io.Packer.fire, descriptorCount-1.U, descriptorCount))
-    io.CtrlUnit.ready := descriptorCount === 0.U
+    //descriptorCount := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.nDesc, Mux(io.Packer.fire, descriptorCount-1.U, descriptorCount))
+    //io.CtrlUnit.ready := descriptorCount === 0.U
     descriptor := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.descriptorIn, descriptor)
 
     
 
     // We should be able to extract everything at once.
     // And just mask when >= descriptorCount
-    def ActiveDescriptor() : ExtractionDescriptor = {
-        descriptors(descriptorCount-1.U)
-    }
+    //def ActiveDescriptor() : ExtractionDescriptor = {
+    //    descriptors(descriptorCount-1.U)
+    //}
 
     when (io.CtrlUnit.fire) {
       //   SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d dataIn 0x%x\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID, io.CtrlUnit.bits.data)
     }
 
+    /*
+        We can extract everything in parallel
+    */
 
-    when (descriptorCount > 0.U) {
-
-        io.Packer.valid := true.B
-        val desc = ActiveDescriptor()
-
+    val validPacker = RegInit(false.B)
+    validPacker :=  Mux(io.CtrlUnit.fire, true.B, Mux(io.Packer.fire, false.B, validPacker))
+    io.Packer.valid := validPacker
+    io.CtrlUnit.ready := !validPacker
+    (0 until nExtractionDesc).foreach { i =>
+        val descriptor = descriptors(i)
         val result = Wire(UInt(64.W)) // max = 8 bytes
         result := 0.U
 
         val byteOffset = Wire(UInt(7.W))
-        byteOffset := desc.start
-        val dataSize = desc.size
+        byteOffset := descriptor.start
+        val dataSize = descriptor.size
 
         val shifted = tmpLine >> (byteOffset << 3)
 
@@ -104,11 +108,34 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
             is(3.U) { result := shifted(63, 0) }     // 8 bytes
         }
 
-       // SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
-        io.Packer.bits.dataSize := desc.size
-        io.Packer.bits.dataIn := result
-        io.Packer.valid := true.B
-        io.Packer.bits.placement := desc.pos
-        io.Packer.bits.descriptorIn  := descriptor
+        io.Packer.bits.dataVecIn(i) := result
     }
+    io.Packer.bits.descriptorIn  := descriptor
+
+
+
+
+    //when (descriptorCount > 0.U) {  //
+    //    io.Packer.valid := true.B
+    //    val desc = ActiveDescriptor()   //
+    //    val result = Wire(UInt(64.W)) // max = 8 bytes
+    //    result := 0.U   //
+    //    val byteOffset = Wire(UInt(7.W))
+    //    byteOffset := desc.start
+    //    val dataSize = desc.size    //
+    //    val shifted = tmpLine >> (byteOffset << 3)  //
+    //    
+    //    switch(dataSize) {
+    //        is(0.U) { result := shifted(7, 0) }      // 1 byte
+    //        is(1.U) { result := shifted(15, 0) }     // 2 bytes
+    //        is(2.U) { result := shifted(31, 0) }     // 4 bytes
+    //        is(3.U) { result := shifted(63, 0) }     // 8 bytes
+    //    }   //
+    //   // SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
+    //    io.Packer.bits.dataSize := desc.size
+    //    io.Packer.bits.dataIn := result
+    //    io.Packer.valid := true.B
+    //    io.Packer.bits.placement := desc.pos
+    //    io.Packer.bits.descriptorIn  := descriptor
+    //}
 }

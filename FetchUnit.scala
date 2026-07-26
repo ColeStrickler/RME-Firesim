@@ -17,7 +17,8 @@ case class RequestTableEntry(inMaxID : Int, outMaxID : Int, nExtractDesc : Int) 
 {
     val descriptor = new RequestDescriptor(inMaxID, outMaxID)
     val extractionDescriptors = Vec(nExtractDesc, new ExtractionDescriptor(4))
-    val activeDesc = UInt(log2Ceil(nExtractDesc+1).W)
+    val extractionDescriptorsValid = Vec(nExtractDesc, Bool())
+    //val activeDesc = UInt(log2Ceil(nExtractDesc+1).W)
     val active = Bool()
 }
 
@@ -76,7 +77,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         println(s"dataRegWidth $dataRegWidth")
         val io = IO(new FetchUnitIO(tlInParams, tlOutParams, inMaxID, outMaxID, dataRegWidth)).suggestName(s"fetchunitio_$instance-$subInstance")
 
-
+        println(s"\n\n\nout data width ${io.OutReq.bits.data.getWidth}\n\n\n")
         io.OutReq.valid := false.B
         io.OutReq.bits := 0.U.asTypeOf(new TLBundleA(tlOutParams))
 
@@ -97,7 +98,8 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             ed
         })
         emptyEntry.active := false.B
-        emptyEntry.activeDesc := 0.U
+        emptyEntry.extractionDescriptorsValid := Wire(Vec(nExtractDesc, false.B))
+        //emptyEntry.activeDesc := 0.U
                 // Request Table Init //
 
 
@@ -133,7 +135,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         def GetCoalesceVec(incomingDesc: RequestDescriptor) : Vec[Bool] = {
             VecInit(requestTable.zipWithIndex.map{ case (entry,i) =>
-                (entry.descriptor.addr === incomingDesc.addr) && (entry.activeDesc < nExtractDesc.U) && (entry.descriptor.baseID === incomingDesc.baseID)
+                (entry.descriptor.addr === incomingDesc.addr) /*&& (entry.activeDesc < nExtractDesc.U)*/ && (entry.descriptor.baseID === incomingDesc.baseID)
             })
         }
 
@@ -165,17 +167,22 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
             val reqTableEntry = Wire(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
             reqTableEntry := 0.U.asTypeOf(new RequestTableEntry(inMaxID, outMaxID, nExtractDesc))
             reqTableEntry.descriptor := reqPort.descriptor
-            reqTableEntry.extractionDescriptors(0) := reqPort.extractionDescriptor
-            reqTableEntry.activeDesc := 1.U
+            val pos = reqPort.extractionDescriptor.pos
+            reqTableEntry.extractionDescriptors(pos) := reqPort.extractionDescriptor
+            reqTableEntry.extractionDescriptorsValid(pos) := true.B
             reqTableEntry.active := true.B
             requestTable(entry) := reqTableEntry
         }
 
 
         def CoalesceEntry(entry: UInt, extractionDescript: ExtractionDescriptor) : Unit = {
-            val active_desc = requestTable(entry).activeDesc
-            requestTable(entry).activeDesc := active_desc + 1.U
-            requestTable(entry).extractionDescriptors(active_desc) := extractionDescript
+            //val active_desc = requestTable(entry).activeDesc
+
+            val pos = extractionDescript.pos
+            //requestTable(entry).activeDesc := active_desc + 1.U
+            requestTable(entry).extractionDescriptors(pos) := extractionDescript
+            assert(!requestTable(entry).extractionDescriptorsValid(pos))
+            requestTable(entry).extractionDescriptorsValid(pos) := true.B
         }
 
 

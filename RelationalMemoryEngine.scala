@@ -117,11 +117,11 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
     
     
-  println("\n\n\n\nUsing relational memory engine\n\n\n\n")
+  //println("\n\n\n\nUsing relational memory engine\n\n\n\n")
   lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
     val nClients = node.in.length
-    println(s"Number of edges into RME: $nClients\n")
+   // println(s"Number of edges into RME: $nClients\n")
     //require(nClients == 1)
    // val aguModule = agu.module  // hardware instance of AGUTop
 
@@ -174,7 +174,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
             hitIndex
         }
 
-       println(s"params.withPerfCounter = ${params.withPerfCounter}")
+      // println(s"params.withPerfCounter = ${params.withPerfCounter}")
        //require(params.withPerfCounter, "Performance counters must be enabled for this code to run.")
 
         
@@ -242,7 +242,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
                   mmio_EphemeralConfigStart ++ mmio_EphemeralConfigSize ++ mmio_EphemeralRegionConfig_PhysStart ++ dtu_access_reg ++ nondtu_access_reg
       val regmap = ctlnode.regmap(mmreg: _*)
       mmreg.foreach { case (addr, fields) =>
-            println(f"DTU MMIO reg @ 0x$addr%x : ${fields.map(_.desc.get.name).mkString(", ")}")
+          //  println(f"DTU MMIO reg @ 0x$addr%x : ${fields.map(_.desc.get.name).mkString(", ")}")
       }
 
       config.RowSize := r_RowSize
@@ -296,7 +296,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
         
 
 
-      println("MAPPING RME CONTROL REGISTERS")
+     // println("MAPPING RME CONTROL REGISTERS")
       // MMIO Register Mapping
       
       val (out, out_edge) = node.out(i)
@@ -310,13 +310,13 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val inMaxID = (math.pow(2, cachedParams.sourceBits)-1).toInt
       val outMaxID = (math.pow(2, outParams.sourceBits)-1).toInt
 
-      println(f"\n\ninMaxID ${inMaxID} ${cachedParams.sourceBits} outMaxID ${outMaxID} bits ${outParams.sourceBits} ${inParams.sourceBits}\n\n")
+     // println(f"\n\ninMaxID ${inMaxID} ${cachedParams.sourceBits} outMaxID ${outMaxID} bits ${outParams.sourceBits} ${inParams.sourceBits}\n\n")
 
       out.b <> in.b
       out.c <> in.c
       out.e <> in.e
-      println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
-      println(s"source out bits ${out.a.bits.source.getWidth}\n")
+      //println(s"Client #$i Name: ${in_edge.client.clients(0).name}")
+     // println(s"source out bits ${out.a.bits.source.getWidth}\n")
       //val inDBeats = in_edge.numBeats(in.d.bits)
       //val demux = Module(new ConditionalDemuxA(inParams))
       //val rme_in_queue = Module(new Queue(new TLBundleA(inParams), 128, flow=false))
@@ -377,7 +377,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       }
       
       
-      println(s"SourceBits ${cachedRegionIn.a.bits.source.getWidth}")
+     // println(s"SourceBits ${cachedRegionIn.a.bits.source.getWidth}")
       dtu_cached_in_a.bits := cachedRegionIn.a.bits
       dtu_cached_in_a.valid := cachedRegionIn.a.valid
       cachedRegionIn.a.ready := dtu_cached_in_a.ready
@@ -449,7 +449,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       // Either from trapper or directly from DRAM if not an rme request
       //TLArbiter.robin(in_edge, in.d, replyFromDRAMDemux.io.outA)
       in.d <> replyFromDRAMDemux.io.outA
-      println(s"replyFromDRAMDemux ${in.d.bits.data.getWidth} ${replyFromDRAMDemux.io.outA.bits.data.getWidth}")
+      //println(s"replyFromDRAMDemux ${in.d.bits.data.getWidth} ${replyFromDRAMDemux.io.outA.bits.data.getWidth}")
 
       //when (in.d.fire) {
       //  SynthesizePrintf("in.d.fire 0x%x \n", in.d.bits.data)
@@ -508,7 +508,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val RequestorActive = RegInit(false.B)
       val ActiveRequestor = RegInit(0.U(log2Ceil(params.maxConfigs).W))
       val active_vector = reqFetchIO.map(req => req.fire)
-      println(s"OUT.D.BITS ${out.d.bits.data.getWidth}")
+      //(s"OUT.D.BITS ${out.d.bits.data.getWidth}")
 
       reqFetchIO.zipWithIndex.foreach {case (req, i) =>
           
