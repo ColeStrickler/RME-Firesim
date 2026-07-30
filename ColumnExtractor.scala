@@ -58,28 +58,47 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     val descriptors = RegInit(
     VecInit(Seq.fill(nExtractionDesc)(
         0.U.asTypeOf(new ExtractionDescriptor(4))
+    )))
+
+    val descriptorsValid = RegInit(
+        VecInit(Seq.fill(nExtractionDesc)(
+        false.B)
     ))
-)
+
+
     val descriptorCount = RegInit(0.U(log2Ceil(nExtractionDesc+1).W))
     val descriptor = Reg(new RequestDescriptor(inMaxID, outmaxID))
 
-    tmpLine := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.data, tmpLine)
-    descriptors := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.extractionDescriptors, descriptors)
-    //descriptorCount := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.nDesc, Mux(io.Packer.fire, descriptorCount-1.U, descriptorCount))
-    //io.CtrlUnit.ready := descriptorCount === 0.U
-    descriptor := Mux(io.CtrlUnit.fire, io.CtrlUnit.bits.descriptorIn, descriptor)
-
-    
-
+    when(io.CtrlUnit.fire) {
+        tmpLine         := io.CtrlUnit.bits.data
+        descriptors     := io.CtrlUnit.bits.extractionDescriptors
+        descriptorsValid := io.CtrlUnit.bits.extractionDescriptorsValid
+        descriptor      := io.CtrlUnit.bits.descriptorIn
+    }
     // We should be able to extract everything at once.
     // And just mask when >= descriptorCount
     //def ActiveDescriptor() : ExtractionDescriptor = {
     //    descriptors(descriptorCount-1.U)
     //}
 
-    when (io.CtrlUnit.fire) {
-      //   SynthesizePrintf("[ColumnExtractor] in.fire! descCount 0x%x baseID %d dataIn 0x%x\n", io.CtrlUnit.bits.nDesc, io.CtrlUnit.bits.descriptorIn.baseID, io.CtrlUnit.bits.data)
+    when(io.CtrlUnit.fire) {
+        SynthesizePrintf(
+            "[Colxtractor] CTRL FIRE inputValidMask=0x%x\n",
+            io.CtrlUnit.bits.extractionDescriptorsValid.asUInt,
+        )
+
     }
+
+    when(io.Packer.fire) {
+
+        SynthesizePrintf(
+        "[ColExtractor] PACKER FIRE regMask=0x%x outputMask=0x%x size=%d\n",
+        descriptorsValid.asUInt,
+        io.Packer.bits.dataInValid.asUInt,
+        io.Packer.bits.dataSize
+    )
+}
+
 
     /*
         We can extract everything in parallel
@@ -90,12 +109,12 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     io.Packer.valid := validPacker
     io.CtrlUnit.ready := !validPacker
     (0 until nExtractionDesc).foreach { i =>
-        val descriptor = descriptors(i)
+        val edescriptor = descriptors(i)
         val result = Wire(UInt(64.W)) // max = 8 bytes
         result := 0.U
 
         val byteOffset = Wire(UInt(7.W))
-        byteOffset := descriptor.start
+        byteOffset := edescriptor.start
         val dataSize = descriptor.size
 
         val shifted = tmpLine >> (byteOffset << 3)
@@ -109,9 +128,24 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
         }
 
         io.Packer.bits.dataVecIn(i) := result
-    }
-    io.Packer.bits.descriptorIn  := descriptor
+        io.Packer.bits.dataInValid(i) := descriptorsValid(i)
+        when (io.Packer.fire)
+        {
+            SynthesizePrintf("(ColExtract%d) data 0x%x\n", i.U, result)
+        }
+    
 
+    }
+
+
+
+
+
+    io.Packer.bits.dataSize := descriptor.size
+        
+
+    io.Packer.bits.descriptorIn  := descriptor
+   
 
 
 
@@ -132,7 +166,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
     //        is(3.U) { result := shifted(63, 0) }     // 8 bytes
     //    }   //
     //   // SynthesizePrintf("[ColExtractor] DescriptorCount %d. start %d Extracted: %d\n", descriptorCount,desc.start, result)
-    //    io.Packer.bits.dataSize := desc.size
+    //    
     //    io.Packer.bits.dataIn := result
     //    io.Packer.valid := true.B
     //    io.Packer.bits.placement := desc.pos

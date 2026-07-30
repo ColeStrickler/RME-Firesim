@@ -125,7 +125,14 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
         io.FetchUnitPort.ready := Mux(hasMatch, colExtractorIOs(matchEntry).CtrlUnit.ready, freeVec.reduce(_||_))
 
 
-
+        when (io.FetchUnitPort.fire)
+        {
+            SynthesizePrintf(
+                "[ControlUnit] FetchUnitPort FIRE inputValidMask=0x%x\n",
+                io.FetchUnitPort.bits.reqTableEntry.extractionDescriptorsValid.asUInt
+            )
+        }
+        
 
 
 
@@ -140,6 +147,7 @@ class ControlUnitRME(params: RelMemParams, tlOutEdge: TLEdgeOut, tlCachedEdge: T
             colExtractorIOs(matchEntry).CtrlUnit.bits.position := io.FetchUnitPort.bits.reqTableEntry.descriptor.requestPlacement
             colExtractorIOs(matchEntry).CtrlUnit.bits.extractionDescriptors := io.FetchUnitPort.bits.reqTableEntry.extractionDescriptors
             colExtractorIOs(matchEntry).CtrlUnit.bits.descriptorIn := io.FetchUnitPort.bits.reqTableEntry.descriptor
+             colExtractorIOs(matchEntry).CtrlUnit.bits.extractionDescriptorsValid := io.FetchUnitPort.bits.reqTableEntry.extractionDescriptorsValid
             //colExtractorIOs(matchEntry).CtrlUnit.bits.nDesc := io.FetchUnitPort.bits.reqTableEntry.activeDesc
         }
         .otherwise {

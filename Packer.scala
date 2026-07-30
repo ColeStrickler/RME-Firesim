@@ -9,6 +9,7 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
+import freechips.rocketchip.util.SeqToAugmentedSeq
 
 
 
@@ -47,7 +48,7 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int, nExtraction
 
 
     val baseReqSrc = RegInit(0.U(log2Ceil(inMaxID).W))
-    val writeBytes = Wire(Vec(8, UInt(8.W))) // max 8 bytes
+   // val writeBytes = Wire(Vec(8, UInt(8.W))) // max 8 bytes
 
     //for (i <- 0 until 8) {
     //    writeBytes(i) := io.ColExtractor.bits.dataIn(8*i + 7, 8*i)
@@ -59,18 +60,20 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int, nExtraction
 
     val NumPackedBytes = RegInit(0.U(7.W))
 
-    val bytesIn = io.ColExtractor.bits.dataInValid.map(_.asUInt).reduce(_ + _) << io.ColExtractor.bits.dataSize
+    val bytesIn = PopCount(io.ColExtractor.bits.dataInValid) << io.ColExtractor.bits.dataSize
    when (io.ColExtractor.fire) {
     baseReqSrc := io.ColExtractor.bits.descriptorIn.baseID
+    val DataSize =  io.ColExtractor.bits.dataSize
 
-
-
-    val DataSize = (1.U << io.ColExtractor.bits.dataSize)
-    (0 until nExtractionDesc).foreach{i =>
+    SynthesizePrintf("DataSize %d -- %d -- %d\n", DataSize,  bytesIn,  io.ColExtractor.bits.dataInValid.asUInt)
+    (0 until nExtractionDesc).foreach{j =>
         val writeBytes = Wire(Vec(8, UInt(8.W))) // max 8 bytes
         for (i <- 0 until 8) {
-            writeBytes(i) := io.ColExtractor.bits.dataVecIn(i)(8*i + 7, 8*i)
+            writeBytes(i) := io.ColExtractor.bits.dataVecIn(j)(8*i + 7, 8*i)
         }
+
+        val entryValid = io.ColExtractor.bits.dataInValid(j)
+
         switch (DataSize)
         {
             /* This will straight up not work for 1 and 2. 
@@ -78,34 +81,48 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int, nExtraction
                 We cannot provide a straightforward map from descriptors to placement.
                 We do not have enough room.
             */
-            is (1.U) 
+            is (0.U) 
             {
                 assert(false.B)
-                val byteOffset = i
-                for (i <- 0 until 1) {
-                    packedLineBytes((byteOffset + i).U) := writeBytes(i)   
-                }
+                //val byteOffset = j
+                //when (entryValid)
+                //{
+                //    for (i <- 0 until 1) {
+                //    packedLineBytes((byteOffset + i).U) := writeBytes(i)   
+                //    }
+                //}
+
+            }
+            is (1.U)
+            {
+                assert(false.B)
+                //val byteOffset = j*2
+                //when (entryValid) {
+                //    for (i <- 0 until 2) {
+                //        packedLineBytes((byteOffset + i).U) := writeBytes(i)   
+                //    }
+                //}
             }
             is (2.U)
             {
-                assert(false.B)
-                val byteOffset = i*2
-                for (i <- 0 until 2) {
-                    packedLineBytes((byteOffset + i).U) := writeBytes(i)   
+                val byteOffset = j*4
+                when (entryValid) {
+                    for (i <- 0 until 4) {
+                        packedLineBytes(byteOffset + i) := writeBytes(i)   
+                    }
                 }
+
+                SynthesizePrintf("[Packer%d] WriteBytes %d\n", j.U, writeBytes.asUInt)
             }
-            is (4.U)
+            is (3.U)
             {
-                val byteOffset = i*4
-                for (i <- 0 until 4) {
-                    packedLineBytes((byteOffset + i).U) := writeBytes(i)   
-                }
-            }
-            is (8.U)
-            {
-                val byteOffset = i*8
-                for (i <- 0 until 8) {
-                    packedLineBytes((byteOffset + i).U) := writeBytes(i)   
+                val byteOffset = j * 8
+                if (byteOffset < 64) {
+                    when (entryValid) {
+                        for (i <- 0 until 8) {
+                            packedLineBytes(byteOffset + i) := writeBytes(i)   
+                        }
+                    }
                 }
             }
         }
@@ -129,9 +146,9 @@ class PackerRME(params : RelMemParams, inMaxID: Int, outmaxID : Int, nExtraction
 
 
 
-    when ((NumPackedBytes === 64.U))
+    when ((NumPackedBytes > 0.U))
     {
-       // SynthesizePrintf("[PACKER FULL]\n")
+        SynthesizePrintf("NumPacked %d\n", NumPackedBytes)
     }
 
     //val active :: clear :: Nil = Enum(2)

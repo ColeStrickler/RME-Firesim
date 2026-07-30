@@ -35,6 +35,7 @@ case class RequestDescriptor(inMaxID:Int, outmaxID : Int) extends Bundle
     val done  = Bool()
     val dst = DESTINATION()
     val addr = UInt(33.W)
+    val size = UInt(2.W) // hardcode for max of 8 for now
   //  val ticket = UInt(16.W)
 }
 
@@ -55,7 +56,6 @@ case class RequestorTrapperPort(params : TLBundleParameters, relmemParams : RelM
 
 case class ExtractionDescriptor(minDataSize: Int) extends Bundle {
     val start = UInt(log2Ceil(64).W)
-    val size = UInt(2.W) // hardcode for max of 8 for now
     val pos = UInt(log2Ceil(64/minDataSize).W)
 }
 
@@ -199,7 +199,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
         io.FetchUnit.bits.descriptor.baseID := baseRequest.source
 
          // this will need to be handled differently once we have multiple valuable data in a single cache line
-        io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
+        //io.FetchUnit.bits.descriptor.requestPlacement := TotalCacheLinesSent // FIX LATER
         readyNextReq := stateReg === idle
         requestQueue.io.deq.ready := readyNextReq // start new requests when all of old ones have been sent
 
@@ -362,7 +362,7 @@ class RequestorRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge, t
                 val extractionDescriptorOut = Wire(ExtractionDescriptor(4))
                 extractionDescriptorOut.start := start 
                 extractionDescriptorOut.pos := placement
-                extractionDescriptorOut.size := extract_size 
+                descriptorOut.size := extract_size 
 
 
 

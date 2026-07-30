@@ -93,12 +93,12 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
         { // extractionDescriptors init (each element must be initialized)
             val ed = Wire(new ExtractionDescriptor(4))
             ed.start := 0.U
-            ed.size  := 0.U
+            //ed.size  := 0.U
             ed.pos   := 0.U
             ed
         })
         emptyEntry.active := false.B
-        emptyEntry.extractionDescriptorsValid := Wire(Vec(nExtractDesc, false.B))
+        emptyEntry.extractionDescriptorsValid := VecInit(Seq.fill(nExtractDesc)(false.B))
         //emptyEntry.activeDesc := 0.U
                 // Request Table Init //
 
@@ -135,7 +135,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         def GetCoalesceVec(incomingDesc: RequestDescriptor) : Vec[Bool] = {
             VecInit(requestTable.zipWithIndex.map{ case (entry,i) =>
-                (entry.descriptor.addr === incomingDesc.addr) /*&& (entry.activeDesc < nExtractDesc.U)*/ && (entry.descriptor.baseID === incomingDesc.baseID)
+                (entry.descriptor.addr === incomingDesc.addr) && (incomingDesc.dst.asUInt === 0.U) && (entry.descriptor.baseID === incomingDesc.baseID)
             })
         }
 
@@ -177,9 +177,9 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         def CoalesceEntry(entry: UInt, extractionDescript: ExtractionDescriptor) : Unit = {
             //val active_desc = requestTable(entry).activeDesc
-
             val pos = extractionDescript.pos
             //requestTable(entry).activeDesc := active_desc + 1.U
+            SynthesizePrintf("(FetchUnit) pos incoming %d\n", pos)
             requestTable(entry).extractionDescriptors(pos) := extractionDescript
             assert(!requestTable(entry).extractionDescriptorsValid(pos))
             requestTable(entry).extractionDescriptorsValid(pos) := true.B
@@ -242,6 +242,7 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
             }
             .otherwise {
+                SynthesizePrintf("(FetchUnit) incoming source %d\n", io.Requestor.bits.descriptor.dst.asUInt)
                 //SynthesizePrintf("Coalesce Entry! 0x%x BaseID %d Entry %d\n", io.Requestor.bits.descriptor.addr, io.Requestor.bits.descriptor.baseID, coalesce_entry)
                 CoalesceEntry(coalesce_entry, io.Requestor.bits.extractionDescriptor)
             }

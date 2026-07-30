@@ -288,6 +288,7 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
         descriptorOut.done := false.B
         descriptorOut.dst := DESTINATION.PREFETCH_UNIT
         descriptorOut.addr := addr + stream2PhysicalAddressStart
+        descriptorOut.size := 6.U
         descriptorOut
     }
     
