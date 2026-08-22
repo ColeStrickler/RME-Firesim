@@ -119,7 +119,9 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
 
         val shifted = tmpLine >> (byteOffset << 3)
 
-        
+
+
+
         switch(dataSize) {
             is(0.U) { result := shifted(7, 0) }      // 1 byte
             is(1.U) { result := shifted(15, 0) }     // 2 bytes

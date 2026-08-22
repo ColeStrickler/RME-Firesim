@@ -15,14 +15,14 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
+import _root_.subsystem.rme.ConditionalDemuxD
+import _root_.subsystem.rme.ConditionalDemuxA
 import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
-import subsystem.rme._
+import _root_.subsystem.rme._
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
-import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
+import _root_.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
 
 case class RelMemParams (
     regaddress: Int = 0x3000000,
@@ -84,7 +84,18 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
   //  Resource(device2, "reserved").bind(ResourceAddress(addr2, rocketchip.resources.ResourcePermissions(true, true, false, true, true)))
   //}
 
+  val toLLCNode = TLClientNode(Seq(
+    TLMasterPortParameters.v1(
+      Seq(
+        TLMasterParameters.v1(
+          name = "DTUToLLC",
+          sourceId = IdRange(0, params.nFetchUnits),
+        )
+      )
+    )
+  ))
 
+  
 
 
   val dtu_cached_region = TLManagerNode(Seq(TLSlavePortParameters.v1(Seq(TLManagerParameters(
@@ -125,6 +136,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
     //require(nClients == 1)
    // val aguModule = agu.module  // hardware instance of AGUTop
 
+    val io = IO(new Bundle {
+      val DTU_DirectoryIOIn = Valid(UInt(48.W))
+      val DTU_DirectoryIOOut = Flipped(Valid(Bool()))
+    })
 
 
     val config = Wire(RMEConfigPortIO(params))
@@ -284,6 +299,9 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       val inParams = in_edge.bundle
       out <> in 
     }
+
+
+
         // Assign IO
 
         
@@ -347,7 +365,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
 
-      val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, 0,0))
+      val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, toLLCNode, 0,0))
 
 
 
@@ -556,6 +574,26 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       fetch_unit.io.Requestor.bits := selectedRequestor.bits
       
 
+
+      // LLC Port
+      io.DTU_DirectoryIOIn.valid := selectedRequestor.valid
+      io.DTU_DirectoryIOIn.bits := selectedRequestor.bits.descriptor.addr
+      fetch_unit.io.IncomingReqInCache := io.DTU_DirectoryIOOut.valid && io.DTU_DirectoryIOOut.bits
+      val (toLLC, toLLCEdge) = toLLCNode.out(0)
+      fetch_unit.io.LLCOutReq <> toLLC.a
+      fetch_unit.io.LLCInReply <> toLLC.d
+      when (toLLC.a.fire)
+      {
+        SynthesizePrintf("TO LLC FROM MAIN addr 0x%x SRC=%d\n", toLLC.a.bits.address, toLLC.a.bits.source)
+      }
+
+      println("DTU toLLC managers:")
+      toLLCEdge.manager.managers.foreach { m =>
+        println(s"  ${m.name}: ${m.address}")
+      }
+    toLLCEdge.client.clients.foreach { c =>
+  println(s"${c.name}: visibility=${c.visibility}")
+}
       
     control_unit.io.FetchUnitPort <> fetch_unit.io.ControlUnit
     val toPreReady = prefetch_units.zipWithIndex.map { case (pre, i) =>
@@ -597,24 +635,35 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
 
   val rme = p(RMEKey) match {
     case Some(params) => {
-      pbus.coupleTo(portName) {
-        mbus.rme.get.ctlnode := 
-        TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
-
-      mbus.rme.get.agu_vec.foreach{ agu => 
-        pbus.coupleTo(portName) {
-          agu.ctlnode := 
-          TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ 
-        }
-
-      }
+      //pbus.coupleTo(portName) {
+      //  mbus.rme.get.ctlnode := 
+      //  TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
+      //mbus.rme.get.agu_vec.foreach{ agu => 
+      //  pbus.coupleTo(portName) {
+      //    agu.ctlnode := 
+      //    TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ 
+      //  }
+      //}
+      //mbus.coupleTo("dtu_cached_region") {
+      //  mbus.rme.get.dtu_cached_region := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
+      //}
       
-      mbus.coupleTo("dtu_cached_region") {
-        mbus.rme.get.dtu_cached_region := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
-      }
-
+      //pbus.coupleTo(portName) {
+      //  sbus.rme.get.ctlnode := 
+      //  TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ }
+      //sbus.rme.get.agu_vec.foreach{ agu => 
+      //  pbus.coupleTo(portName) {
+      //    agu.ctlnode := 
+      //    TLFragmenter(pbus.beatBytes, pbus.blockBytes) := _ 
+      //  }
+      //}
+      //sbus.coupleTo("dtu_cached_region") {
+      //  sbus.rme.get.dtu_cached_region := TLFragmenter(mbus.beatBytes, mbus.blockBytes) := _
+      //}
+      
     //val uncached = LazyModule(new DTUUncachedRegion)
-      
+
+    
     sbus.coupleTo("dtu_uncached") {
       mbus.dtu_uncached_region.get.cpuNode := 
       TLBuffer(1)  :=  _
@@ -623,8 +672,8 @@ trait CanHavePeripheryRME { this: BaseSubsystem =>
 
     mbus.coupleFrom("simple_uncached_region_mem") { _ := mbus.dtu_uncached_region.get.memNode }
           
-          
-      mbus.rme.get
+    None
+      //mbus.rme.get
     }
     case None => None
 }

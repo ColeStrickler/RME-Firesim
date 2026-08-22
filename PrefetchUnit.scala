@@ -10,7 +10,7 @@ import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
 import freechips.rocketchip.subsystem.{CacheBlockBytes}
-import subsystem.rme._
+import _root_.subsystem.rme._
 
 
 case class SingleNextLinePrefetcherParams(

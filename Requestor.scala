@@ -9,7 +9,7 @@ import freechips.rocketchip.regmapper._
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import freechips.rocketchip.diplomacy.BufferParams.flow
-import _root_.subsystem.rme.subsystem.rme.IDAllocator
+import _root_.subsystem.rme.IDAllocator
 import scala.annotation.meta.param
 import os.stat
 import agu.AGUTop

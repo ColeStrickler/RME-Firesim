@@ -12,10 +12,10 @@ import freechips.rocketchip
 import midas.targetutils.SynthesizePrintf
 import org.chipsalliance.cde.config.{Parameters, Field, Config}
 import scala.collection.mutable.ArrayBuffer
-import subsystem.rme.RequestorAGUPort
-import subsystem.rme.PrefetchUnitAGUIO
+import _root_.subsystem.rme.RequestorAGUPort
+import _root_.subsystem.rme.PrefetchUnitAGUIO
 import mainargs.TokensReader.Constant
-import subsystem.rme._
+import _root_.subsystem.rme._
 
 
 

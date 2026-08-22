@@ -1,6 +1,5 @@
 package subsystem.rme
 
-package subsystem.rme
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
