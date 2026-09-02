@@ -15,14 +15,14 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
+//import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
+//import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
 import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
 import subsystem.rme._
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
-import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
+//import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
 
 case class RelMemParams (
     regaddress: Int = 0x3000000,
@@ -34,6 +34,7 @@ case class RelMemParams (
     withPerfCounter : Boolean = false,
     maxConfigs : Int = 4,
     maxDataSize : Int = 3, // 2^maxDataSize --> same as TL.A.size
+    requestCacheEntries: Int = 32,
 )
 
 case object RMEKey extends Field[Option[RelMemParams]](None)
@@ -348,6 +349,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       val fetch_unit = Module(new FetchUnitRME(params, node, cachedRegionEdge, 0,0))
+      val fetch_request_cache = Module(new FetchRequestCache(out_edge.bundle, params.requestCacheEntries))
 
 
 
@@ -431,9 +433,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       replyFromDRAMDemux.io.sel := replySelectorCond // if any conditions are true, broadcast to fetch units
       replyFromDRAMDemux.io.outB.ready := false.B // default 
 
-      fetch_unit.io.inReply.valid := replySelectorCond && out.d.valid
-      fetch_unit.io.inReply.bits := replyFromDRAMDemux.io.outB.bits
-      replyFromDRAMDemux.io.outB.ready := fetch_unit.io.inReply.ready
+      fetch_request_cache.io.memResp.valid := replySelectorCond && out.d.valid
+      fetch_request_cache.io.memResp.bits := replyFromDRAMDemux.io.outB.bits
+      replyFromDRAMDemux.io.outB.ready := fetch_request_cache.io.memResp.ready
+      fetch_unit.io.inReply <> fetch_request_cache.io.fetchResp
 
 
       //when (out.d.fire)
@@ -442,7 +445,7 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
       //}
 
 
-      perfDTU := perfDTU + fetch_unit.io.OutReq.fire.asUInt
+      perfDTU := perfDTU + fetch_request_cache.io.memReq.fire.asUInt
       perfNonDTU := perfNonDTU + (in_edge.first(in.a) && in.a.fire).asUInt
 
 
@@ -457,7 +460,10 @@ class RME(params: RelMemParams)(implicit p: Parameters) extends LazyModule
 
 
       // Outgoing arbiter for passthrough and RME requests
-      val fetch_unit_outbound = Seq(fetch_unit.io.OutReq) //fetch_units.map(fetch_unit => fetch_unit.OutReq)
+      fetch_request_cache.io.fetchReq <> fetch_unit.io.OutReq
+      fetch_request_cache.io.flush := r_Reset
+
+      val fetch_unit_outbound = Seq(fetch_request_cache.io.memReq) //fetch_units.map(fetch_unit => fetch_unit.OutReq)
       TLArbiter.robin(out_edge, out.a, (Seq(in.a) ++ fetch_unit_outbound):_*) // we have to pass as a single Seq i guess
       
      
