@@ -15,14 +15,14 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxD
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
+import _root_.subsystem.rme.ConditionalDemuxD
+import _root_.subsystem.rme.ConditionalDemuxA
 import chisel3.util.RRArbiter
 import _root_.subsystem.rme.FetchUnitRME
 import subsystem.rme._
 import freechips.rocketchip.util.SeqToAugmentedSeq
 import agu._
-import _root_.subsystem.rme.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
+import _root_.subsystem.rme.{DTUCachedRegionManager, DTUUncachedRegion}
 
 case class RelMemParams (
     regaddress: Int = 0x3000000,

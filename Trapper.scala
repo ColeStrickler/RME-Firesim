@@ -16,7 +16,7 @@ import freechips.rocketchip.diplomacy.{AddressRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.subsystem.{BaseSubsystem, MBUS, Attachable}
 import freechips.rocketchip.subsystem._
 import freechips.rocketchip.subsystem.Attachable
-import _root_.subsystem.rme.subsystem.rme.ConditionalDemuxA
+import _root_.subsystem.rme.ConditionalDemuxA
 
 
 
