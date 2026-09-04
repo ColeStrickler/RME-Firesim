@@ -374,15 +374,24 @@ class FetchUnitRME(params: RelMemParams, adapter: TLAdapterNode, cachedRegionEdg
 
         val dataWidthCache = io.LLCInReply.bits.data.getWidth
         val shiftNewDataCache = io.LLCInReply.bits.data
+        val outputFire = io.Prefetch.ToPre.fire || io.ControlUnit.fire
 
 
         dataReg2 := Mux(io.LLCInReply.fire, Cat(shiftNewDataCache, (dataReg2 >> dataWidthCache)((dataReg2.getWidth - 1)-dataWidthCache, 0)), dataReg2)
-        dataReg2Full := Mux(dataReg2Full, !(io.Prefetch.ToPre.fire || io.ControlUnit.fire) && !dataRegFull, (d_last_cache && io.LLCInReply.fire))
-
+        dataReg2Full := Mux(
+            dataReg2Full,
+            !(outputFire && !dataRegFull),
+            d_last_cache && io.LLCInReply.fire
+        )
         
         // we have to splice the data after shift because zeroes are put in the top
         dataReg := Mux(io.inReply.fire, Cat(shiftNewData, (dataReg >> dataWidth)((dataReg.getWidth - 1)-dataWidth, 0)), dataReg)
-        dataRegFull := Mux(dataRegFull, !(io.Prefetch.ToPre.fire || io.ControlUnit.fire), (d_last && io.inReply.fire))
+        //dataRegFull := Mux(dataRegFull, !(io.Prefetch.ToPre.fire || io.ControlUnit.fire), (d_last && io.inReply.fire))
+        dataRegFull := Mux(
+            dataRegFull,
+            !outputFire,
+            d_last && io.inReply.fire
+        )
 
        // receivingEntry := (outMaxID.U - io.inReply.bits.source)
 

@@ -439,7 +439,9 @@ class PreFetchUnitRME(params: RelMemParams, tlInEdge : TLEdge, tlOutEdge: TLEdge
             RequestQueueArb.io.in(1).valid := true.B
             val pred = RequestQueueArb.io.in(1).fire
             state := Mux(pred, DataState.Requested, DataState.NeedRequest)
-            AllocateTableEntry(InjectionReqAddr)
+            when (RequestQueueArb.io.in(1).fire) {
+              AllocateTableEntry(InjectionReqAddr)
+            }
           }
         }
     }

@@ -91,12 +91,12 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
 
     when(io.Packer.fire) {
 
-        SynthesizePrintf(
-        "[ColExtractor] PACKER FIRE regMask=0x%x outputMask=0x%x size=%d\n",
-        descriptorsValid.asUInt,
-        io.Packer.bits.dataInValid.asUInt,
-        io.Packer.bits.dataSize
-    )
+    //    SynthesizePrintf(
+    //    "[ColExtractor] PACKER FIRE regMask=0x%x outputMask=0x%x size=%d\n",
+    //    descriptorsValid.asUInt,
+    //    io.Packer.bits.dataInValid.asUInt,
+    //    io.Packer.bits.dataSize
+    //)
 }
 
 
@@ -133,7 +133,7 @@ class ColumnExtractor(params: RelMemParams, inMaxID : Int, outmaxID : Int, nExtr
         io.Packer.bits.dataInValid(i) := descriptorsValid(i)
         when (io.Packer.fire)
         {
-            SynthesizePrintf("(ColExtract%d) data 0x%x\n", i.U, result)
+           // SynthesizePrintf("(ColExtract%d) data 0x%x\n", i.U, result)
         }
     
 
